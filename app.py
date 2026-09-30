@@ -2,16 +2,16 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="3D Runner", page_icon="🏃", layout="centered")
+st.set_page_config(page_title="3D Runner", page_icon="🏃", layout="wide")
 st.title("🏃 3D Runner: Chạy trốn chó dữ")
-st.caption("Bấm vào khung game trước. ← → đổi làn, ↑/Space nhảy. Điện thoại: vuốt hoặc dùng nút.")
+st.caption("Bấm vào khung game trước. ← → đổi làn, ↑/Space nhảy, ↓/S cúi/trượt. Điện thoại: vuốt hoặc dùng nút.")
 
 name = st.text_input("Nhập username trước khi chơi", max_chars=16, placeholder="VD: Speedy123")
 
 GAME_HTML = r"""
 <style>
   html,body{margin:0;background:#111;overflow:hidden;font-family:sans-serif}
-  #wrap{position:relative;width:100%;height:560px}
+  #wrap{position:relative;width:100%;height:660px}
   canvas{display:block;width:100%;height:100%}
   #hud{position:absolute;top:8px;left:12px;color:#fff;font-size:18px;text-shadow:0 0 4px #000}
   #msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
@@ -19,15 +19,16 @@ GAME_HTML = r"""
   button{font-size:18px;padding:8px 18px;margin:4px;border-radius:8px;border:0;cursor:pointer}
   #pad{position:absolute;bottom:8px;width:100%;display:flex;justify-content:center;gap:8px}
   #pad button{opacity:.55}
+  #blood{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s;background:radial-gradient(transparent 35%,rgba(200,0,0,.85))}
   #mute{position:absolute;top:6px;right:8px;opacity:.7;padding:4px 10px}
   #danger{position:absolute;top:34px;left:12px;color:#ff5252;font-size:14px;text-shadow:0 0 4px #000}
 </style>
 <div id="wrap">
-  <div id="hud">👤 <span id="n"></span> | Điểm: <span id="s">0</span> | Xu: <span id="c">0</span></div>
+  <div id="hud">👤 <span id="n"></span> | Điểm: <span id="s">0</span> | Xu: <span id="c">0</span> | Cấp: <span id="lv">1</span></div><div id="blood"></div>
   <div id="danger"></div>
   <button id="mute">🔊</button>
   <div id="msg"><div id="t"></div><button id="go">▶ Chơi</button></div>
-  <div id="pad"><button id="bl">◀</button><button id="bj">▲</button><button id="br">▶</button></div>
+  <div id="pad"><button id="bl">◀</button><button id="bj">▲</button><button id="bd">▼</button><button id="br">▶</button></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -58,12 +59,27 @@ function noise(d,vol,freq){
   s.connect(f); f.connect(g); g.connect(AC.destination); s.start();
 }
 const sfx={
-  coin:()=>{tone(880,1500,.12,'square',.07)},
-  jump:()=>{tone(250,600,.18,'sine',.15)},
-  hit:()=>{noise(.3,.5,600); tone(150,40,.3,'sawtooth',.2)},
+  coin:()=>tone(880,1500,.12,'square',.07),
+  jump:()=>tone(250,600,.18,'sine',.15),
+  crash:()=>{noise(.4,.6,700);tone(140,35,.4,'sawtooth',.25)},
+  splash:()=>noise(.5,.4,3500),
   bark:()=>{tone(420,160,.12,'sawtooth',.18); setTimeout(()=>tone(400,140,.12,'sawtooth',.18),160)},
-  thunder:()=>{noise(1.6,.8,300)},
-  over:()=>{tone(400,60,1,'triangle',.25)}
+  growl:()=>tone(80,55,.5,'sawtooth',.12),
+  ah:()=>tone(700,450,.3,'sawtooth',.1),
+  scream:()=>{
+    if(muted||!AC) return;
+    const o=AC.createOscillator(),l=AC.createOscillator(),lg=AC.createGain(),g=AC.createGain();
+    o.type='sawtooth'; o.frequency.value=780; l.frequency.value=9; lg.gain.value=60;
+    l.connect(lg); lg.connect(o.frequency);
+    g.gain.setValueAtTime(.16,AC.currentTime); g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+.9);
+    o.connect(g); g.connect(AC.destination); o.start(); l.start(); o.stop(AC.currentTime+.9); l.stop(AC.currentTime+.9);
+  },
+  bite:()=>{noise(.15,.6,2000); tone(200,60,.2,'square',.15)},
+  step:()=>noise(.06,.18,700),
+  breath:()=>noise(.3,.07,2200),
+  swoosh:()=>noise(.25,.2,1800),
+  thunder:()=>noise(1.6,.8,300),
+  over:()=>tone(400,60,1,'triangle',.25)
 };
 const scale=[110,130.8,146.8,164.8,196,164.8,146.8,130.8];
 let step=0;
@@ -160,83 +176,116 @@ scene.add(dog);
 
 /* ---------- LOGIC GAME ---------- */
 const LANES=[-2,0,2];
-let lane,y,vy,speed,score,coins,alive=false,items=[],timer,gap,inv,shake,flash=0,t=0;
+let lane,y,vy,speed,score,coins,alive=false,items=[],timer,gap,inv,shake,flash=0,t=0,duckT=0,dying=0,stepS=0,breathT=0;
 function reset(){
   items.forEach(o=>scene.remove(o.m)); items=[];
-  lane=1;y=0;vy=0;speed=.25;score=0;coins=0;timer=0;gap=4;inv=0;shake=0;alive=true;
-  player.position.x=0;
+  lane=1;y=0;vy=0;speed=.25;score=0;coins=0;timer=0;gap=4;inv=0;shake=0;alive=true;duckT=0;dying=0;
+  player.position.x=0;player.rotation.x=0;player.scale.y=1;player.visible=true;$('blood').style.opacity=0;dog.position.y=0;
 }
-const stripe=canvasTex(64,64,(x,w,h)=>{x.fillStyle='#ffca28';x.fillRect(0,0,w,h);x.fillStyle='#212121';
-  for(let i=-2;i<6;i++){x.beginPath();x.moveTo(i*16,0);x.lineTo(i*16+8,0);x.lineTo(i*16+40,h);x.lineTo(i*16+32,h);x.fill();}});
+const wood=canvasTex(64,64,(x,w,h)=>{x.fillStyle='#8d6e63';x.fillRect(0,0,w,h);x.fillStyle='#4e342e';
+  for(let i=0;i<64;i+=16)x.fillRect(i,0,3,h);x.fillStyle='#3e2723';x.fillRect(0,14,w,5);x.fillRect(0,40,w,5);});
 const coinM=new THREE.MeshLambertMaterial({color:0xffd600,emissive:0x8a6d00});
+const carCols=[0xc62828,0x1565c0,0xf9a825,0x2e7d32,0xeeeeee];
+function box(w,h,d,c,x,y,z){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial({color:c}));m.position.set(x,y,z);return m;}
+function mk(type,l){
+  const g=new THREE.Group(); let hz=.6;
+  if(type==='fence'){const m=new THREE.Mesh(new THREE.BoxGeometry(1.7,.75,.25),new THREE.MeshLambertMaterial({map:wood}));m.position.y=.4;g.add(m);hz=.3;}
+  else if(type==='car'){
+    g.add(box(1.6,.7,3.2,carCols[Math.floor(Math.random()*5)],0,.6,0)); g.add(box(1.3,.55,1.5,0x263238,0,1.2,.2));
+    for(const [x,z] of [[-.8,-1],[.8,-1],[-.8,1],[.8,1]]){const w=new THREE.Mesh(new THREE.CylinderGeometry(.32,.32,.2,12),new THREE.MeshLambertMaterial({color:0x111111}));w.rotation.z=Math.PI/2;w.position.set(x,.32,z);g.add(w);}
+    g.add(box(.3,.15,.05,0xfff59d,-.5,.65,-1.62)); g.add(box(.3,.15,.05,0xfff59d,.5,.65,-1.62)); hz=1.6;}
+  else if(type==='pit'){const m=new THREE.Mesh(new THREE.PlaneGeometry(2.2,3),new THREE.MeshLambertMaterial({color:0x1e88e5,emissive:0x0a2a50}));m.rotation.x=-Math.PI/2;m.position.y=.03;g.add(m);hz=1.5;}
+  else if(type==='pipe'){
+    const c=new THREE.Mesh(new THREE.CylinderGeometry(.35,.35,2.2,16),new THREE.MeshLambertMaterial({color:0x78909c}));c.rotation.z=Math.PI/2;c.position.y=1.7;g.add(c);
+    g.add(box(.2,1.7,.3,0x455a64,-1.05,.85,0)); g.add(box(.2,1.7,.3,0x455a64,1.05,.85,0)); hz=.4;}
+  else{const m=new THREE.Mesh(new THREE.CylinderGeometry(.4,.4,.1,20),coinM);m.rotation.x=Math.PI/2;m.position.y=1.1;g.add(m);}
+  g.position.set(LANES[l],0,-70); scene.add(g); items.push({m:g,type,hz});
+}
 function spawn(){
-  const l=Math.floor(Math.random()*3), r=Math.random();
-  let m,type;
-  if(r<.3){type='low'; m=new THREE.Mesh(new THREE.BoxGeometry(1.5,.6,.8),new THREE.MeshLambertMaterial({map:stripe})); m.position.y=.3;}
-  else if(r<.55){type='tall'; m=new THREE.Mesh(new THREE.BoxGeometry(1.4,2.2,1),new THREE.MeshLambertMaterial({map:stripe,color:0xff8a80})); m.position.y=1.1;}
-  else{type='coin'; m=new THREE.Mesh(new THREE.CylinderGeometry(.4,.4,.1,20),coinM); m.rotation.x=Math.PI/2; m.position.y=1.1;}
-  m.position.x=LANES[l]; m.position.z=-70; scene.add(m); items.push({m,type});
+  const lv=Math.min(1,(speed-.25)/.3), r=Math.random(); let type;
+  if(r<.22)type='coin'; else if(r<.42)type='fence'; else if(r<.62)type='car'; else if(r<.8)type='pit'; else type='pipe';
+  const l=Math.floor(Math.random()*3); mk(type,l);
+  if(type!=='coin'&&Math.random()<.15+lv*.35){mk(['fence','car','pit','pipe'][Math.floor(Math.random()*4)],(l+1+Math.floor(Math.random()*2))%3);}
 }
 function end(){
-  alive=false; music(false); sfx.over(); sfx.bark();
+  alive=false; dying=90; music(false); sfx.scream(); sfx.bark();
+  setTimeout(sfx.bite,350); setTimeout(sfx.scream,550); $('danger').textContent=''; $('blood').style.opacity=.8;
+}
+function showOver(){
   $('t').innerHTML='🐕 Chó cắn rồi!<br><b style="color:#ffca28">'+NAME+' gà quá! 🐔</b><br><small>Điểm: '+Math.floor(score)+' | Xu: '+coins+'</small>';
-  $('go').textContent='↻ Chơi lại'; $('msg').style.display='flex';
+  $('go').textContent='↻ Chơi lại'; $('msg').style.display='flex'; sfx.over();
 }
 const left=()=>{if(alive&&lane>0)lane--}, right=()=>{if(alive&&lane<2)lane++};
 const jump=()=>{if(alive&&y===0){vy=.34;sfx.jump();}};
+const duck=()=>{if(!alive)return; if(y>0)vy=-.4; else if(duckT===0){duckT=45;sfx.swoosh();}};
+addEventListener('keydown',e=>{if(e.key==='ArrowDown'||e.key==='s'){e.preventDefault();duck();}});
 addEventListener('keydown',e=>{
   if(e.key==='ArrowLeft'||e.key==='a')left();
   if(e.key==='ArrowRight'||e.key==='d')right();
   if(['ArrowUp',' ','w'].includes(e.key)){e.preventDefault();jump();}
 });
-$('bl').onclick=left; $('br').onclick=right; $('bj').onclick=jump;
+$('bl').onclick=left; $('br').onclick=right; $('bj').onclick=jump; $('bd').onclick=duck;
 let tx,ty;
 wrap.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY;});
 wrap.addEventListener('touchend',e=>{
   const dx=e.changedTouches[0].clientX-tx, dy=e.changedTouches[0].clientY-ty;
-  if(Math.abs(dx)>Math.abs(dy)){if(dx>30)right();else if(dx<-30)left();} else if(dy<-30)jump();
+  if(Math.abs(dx)>Math.abs(dy)){if(dx>30)right();else if(dx<-30)left();} else if(dy<-30)jump(); else if(dy>30)duck();
 });
 $('go').onclick=()=>{ac(); if(AC.state==='suspended')AC.resume(); $('msg').style.display='none'; reset(); music(true); window.focus();};
 
 function hit(o){
-  sfx.hit(); sfx.bark(); gap-=1.5; inv=70; shake=12;
+  if(o.type==='pit')sfx.splash(); else sfx.crash();
+  sfx.ah(); sfx.bark(); gap-=1.8; inv=80; shake=14;
+  $('blood').style.opacity=.6; setTimeout(()=>{if(alive)$('blood').style.opacity=0},250);
   scene.remove(o.m); items.splice(items.indexOf(o),1);
   if(gap<=1.1) end();
 }
 function loop(){
   requestAnimationFrame(loop); t+=.016;
-  // sét
   if(Math.random()<.003){flash=7; if(alive) setTimeout(sfx.thunder,300);}
   hemi.intensity=flash>0?2.2:.85; if(flash>0)flash--;
-  if(alive){
-    speed+=.00008; score+=speed*2; timer++;
-    if(timer%32===0) spawn();
-    player.position.x+=(LANES[lane]-player.position.x)*.2;
+  if(dying>0){
+    dying--; shake=6;
+    dog.position.z+=(.2-dog.position.z)*.15; dog.position.x+=(player.position.x-dog.position.x)*.2;
+    dog.position.y=.4+Math.abs(Math.sin(dying*.5))*.35; dhead.rotation.x=Math.sin(dying*.8)*.3;
+    player.rotation.x+=(-1.4-player.rotation.x)*.1; player.position.y=.15; player.visible=true; player.scale.y=1;
+    if(dying===0) showOver();
+  } else if(alive){
+    speed=Math.min(.62,speed+.00006); score+=speed*.35; timer++;
+    if(timer%Math.max(13,Math.floor(38-(speed-.25)*70))===0) spawn();
+    player.position.x+=(LANES[lane]-player.position.x)*.22;
     vy-=.02; y=Math.max(0,y+vy); if(y===0)vy=0;
     player.position.y=y;
+    if(duckT>0)duckT--;
+    player.scale.y+=((duckT>0&&y===0?.5:1)-player.scale.y)*.4;
     const cyc=t*(10+speed*10), air=y>0;
     lim.legL.rotation.x=air?.5:Math.sin(cyc)*.9; lim.legR.rotation.x=air?-.5:-Math.sin(cyc)*.9;
     lim.armL.rotation.x=air?-2.5:-Math.sin(cyc)*.9; lim.armR.rotation.x=air?-2.5:Math.sin(cyc)*.9;
+    const sg=Math.sign(Math.sin(cyc)); if(sg!==stepS&&y===0&&duckT===0){stepS=sg;sfx.step();}
+    breathT++; if(breathT>=(gap<2.6?20:42)){breathT=0;sfx.breath();}
+    if(gap<2.6&&timer%90===0)sfx.growl();
     if(inv>0){inv--; player.visible=inv%8<4;} else player.visible=true;
-    if(gap<4) gap+=.004;
-    dog.position.set(player.position.x+(dog.position.x-player.position.x)*.9,0,gap);
-    dog.position.x+= (player.position.x-dog.position.x)*.1;
-    dl.forEach((p,i)=>p.rotation.x=Math.sin(cyc*1.3+(i%2?Math.PI:0))*.9);
+    if(gap<4) gap+=.003;
+    dog.position.z=gap; dog.position.x+=(player.position.x-dog.position.x)*.1;
+    dl.forEach((q,i)=>q.rotation.x=Math.sin(cyc*1.3+(i%2?Math.PI:0))*.9);
     dog.position.y=Math.abs(Math.sin(cyc*1.3))*.12; tail.rotation.z=Math.sin(t*20)*.5;
     $('danger').textContent=gap<2.6?'⚠️ CHÓ SẮP CẮN!':'';
     for(let i=items.length-1;i>=0;i--){
       const o=items[i]; o.m.position.z+=speed*2;
-      if(o.type==='coin')o.m.rotation.z+=.1;
+      if(o.type==='coin')o.m.rotation.y+=.1;
       const dz=Math.abs(o.m.position.z-player.position.z), dx=Math.abs(o.m.position.x-player.position.x);
-      if(dz<.9&&dx<.9){
+      if(dz<o.hz+.4&&dx<.9){
         if(o.type==='coin'){coins++;sfx.coin();scene.remove(o.m);items.splice(i,1);continue;}
-        if(inv===0&&(o.type==='tall'||y<.7)){hit(o);if(!alive)break;continue;}
+        if(inv===0){
+          const bad=o.type==='fence'?y<.7:o.type==='car'?y<1.6:o.type==='pit'?y<.35:(duckT===0||y>0);
+          if(bad){hit(o); if(dying>0)break; continue;}
+        }
       }
       if(o.m.position.z>10){scene.remove(o.m);items.splice(i,1);}
     }
     roadTex.offset.y+=speed*2/8;
     bld.forEach(b=>{b.position.z+=speed*2;if(b.position.z>8)b.position.z-=120;});
-    $('s').textContent=Math.floor(score); $('c').textContent=coins;
+    $('s').textContent=Math.floor(score); $('c').textContent=coins; $('lv').textContent=Math.floor((speed-.25)/.05)+1;
   }
   const sh=shake>0?(shake--,(Math.random()-.5)*.3):0;
   cam.position.set(sh,3.6+sh,6.5); cam.lookAt(0,1.2,-6);
@@ -248,6 +297,6 @@ addEventListener('resize',()=>{renderer.setSize(W(),H());cam.aspect=W()/H();cam.
 """
 
 if name.strip():
-    components.html(GAME_HTML.replace("__NAME__", json.dumps(name.strip())), height=580, scrolling=False)
+    components.html(GAME_HTML.replace("__NAME__", json.dumps(name.strip())), height=680, scrolling=False)
 else:
     st.info("👆 Nhập username rồi game sẽ hiện ra.")
