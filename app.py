@@ -3,7 +3,7 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Đua Xe", page_icon="🏎️", layout="centered")
 
-st.title("🏎️ Đua Xe")
+st.title("🏎️ Lái Xe")
 
 GAME_HTML = """
 <div style="display:flex;flex-direction:column;align-items:center;font-family:sans-serif;">
