@@ -22,8 +22,8 @@ const W = canvas.width, H = canvas.height;
 
 const ROAD_X = 40, ROAD_W = 320, LANES = 4, LANE_W = ROAD_W / LANES;
 const CAR_W = 40, CAR_H = 70;
-const START_SPEED = 240, ACCEL = 9, MAX_SPEED = 900;   // tốc độ tăng dần đều
-const SCORE_DIV = 60, COIN_BONUS = 10;                  // điểm tăng chậm
+const START_SPEED = 240, ACCEL = 16, MAX_SPEED = 1100;   // tốc độ tăng dần đều
+const SCORE_DIV = 150, COIN_BONUS = 5;                  // điểm tăng chậm
 const LANE_TIME = 0.22;                                 // giây để đổi 1 làn
 const easeInOut = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const COLORS = ['#e74c3c','#3498db','#f1c40f','#9b59b6','#1abc9c','#e67e22'];
@@ -83,17 +83,39 @@ const menuActions = [startGame, () => { scene = 'scores'; }, () => { scene = 'he
 const menuLabels = ['▶  Chơi ngay', '🏆  Điểm cao', '❓  Hướng dẫn'];
 
 // ---------- Sinh vật thể ----------
+// kind: car = vẽ xe; còn lại vẽ emoji. v = tốc độ tự chạy về phía trước (0 = đứng yên)
+const OBSTACLES = [
+  { kind: 'car', w: CAR_W, h: CAR_H, pad: 6, weight: 5 },
+  { kind: 'car', w: CAR_W, h: CAR_H, pad: 6, weight: 3 },
+  { kind: 'emoji', e: '🚶', w: 28, h: 50, size: 46, pad: 3, weight: 2, v: 0 },
+  { kind: 'emoji', e: '🐕', w: 44, h: 32, size: 40, pad: 3, weight: 2, v: 0 },
+  { kind: 'emoji', e: '🐈', w: 34, h: 30, size: 34, pad: 3, weight: 2, v: 0 },
+  { kind: 'emoji', e: '🐄', w: 50, h: 40, size: 46, pad: 4, weight: 1, v: 0 },
+  { kind: 'emoji', e: '🚧', w: 42, h: 36, size: 40, pad: 3, weight: 2, v: 0 },
+  { kind: 'emoji', e: '🛢️', w: 32, h: 40, size: 38, pad: 3, weight: 1, v: 0 },
+  { kind: 'emoji', e: '🪨', w: 38, h: 32, size: 36, pad: 3, weight: 1, v: 0 },
+];
+const TOTAL_W = OBSTACLES.reduce((a, o) => a + o.weight, 0);
+function pickObstacle() {
+  let r = Math.random() * TOTAL_W;
+  for (const o of OBSTACLES) { if ((r -= o.weight) <= 0) return o; }
+  return OBSTACLES[0];
+}
 function spawnEnemy() {
   const lane = Math.floor(Math.random() * LANES);
-  const x = ROAD_X + lane * LANE_W + (LANE_W - CAR_W) / 2;
-  if (state.enemies.some(e => Math.abs(e.x - x) < 5 && e.y < 120)) return;
-  state.enemies.push({ x, y: -CAR_H - 10, color: COLORS[Math.floor(Math.random() * COLORS.length)], v: 60 + Math.random() * 80 });
+  if (state.enemies.some(e => e.lane === lane && e.y < 140)) return;
+  const o = pickObstacle();
+  const cx = ROAD_X + lane * LANE_W + LANE_W / 2;
+  state.enemies.push({
+    ...o, lane, x: cx - o.w / 2, y: -o.h - 10,
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    v: o.kind === 'car' ? 60 + Math.random() * 80 : 0
+  });
 }
 function spawnCoin() {
   const lane = Math.floor(Math.random() * LANES);
-  const x = ROAD_X + lane * LANE_W + LANE_W / 2;
-  if (state.enemies.some(e => Math.abs(e.x + CAR_W / 2 - x) < 30 && e.y < 100)) return;
-  state.coins.push({ x, y: -20 });
+  if (state.enemies.some(e => e.lane === lane && e.y < 110)) return;
+  state.coins.push({ x: ROAD_X + lane * LANE_W + LANE_W / 2, y: -20 });
 }
 
 // ---------- Vẽ ----------
@@ -108,6 +130,14 @@ function drawCar(x, y, color, player) {
     ctx.fillStyle = '#fff'; ctx.fillRect(x + CAR_W / 2 - 3, y, 6, CAR_H);
     ctx.fillStyle = '#ffe9a0'; ctx.fillRect(x + 4, y + 2, 8, 4); ctx.fillRect(x + CAR_W - 12, y + 2, 8, 4);
   }
+}
+function drawObstacle(e) {
+  if (e.kind === 'car') { drawCar(e.x, e.y, e.color, false); return; }
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(e.x + e.w / 2, e.y + e.h - 2, e.w / 2, 5, 0, 0, 7); ctx.fill();
+  ctx.font = e.size + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(e.e, e.x + e.w / 2, e.y + e.h / 2);
+  ctx.textBaseline = 'alphabetic';
 }
 function drawRoad() {
   ctx.fillStyle = '#2e7d32'; ctx.fillRect(0, 0, W, H);
@@ -173,8 +203,8 @@ function drawScene() {
   if (scene === 'help') {
     overlay(0.75);
     text('❓ HƯỚNG DẪN', W / 2, 80, 28);
-    const lines = ['← → hoặc A D : đổi sang làn kế bên', 'P hoặc Esc : tạm dừng', 'Nhặt xu 🪙 : +10 điểm',
-                   'Tránh va chạm với xe khác', 'Xe càng chạy càng nhanh', 'Điện thoại: dùng 2 nút bên dưới'];
+    const lines = ['← → hoặc A D : đổi sang làn kế bên', 'P hoặc Esc : tạm dừng', 'Nhặt xu 🪙 : +5 điểm',
+                   'Tránh xe, người, chó mèo, chướng ngại', 'Xe càng chạy càng nhanh', 'Điện thoại: dùng 2 nút bên dưới'];
     lines.forEach((l, i) => text(l, W / 2, 150 + i * 42, 17, '#eee'));
     button('⬅ Quay lại', 100, H - 80, 200, 46, toMenu, true);
     return;
@@ -185,7 +215,7 @@ function drawScene() {
     ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(c.x, c.y, 10, 0, 7); ctx.fill();
     ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2; ctx.stroke();
   }
-  for (const e of state.enemies) drawCar(e.x, e.y, e.color, false);
+  for (const e of state.enemies) drawObstacle(e);
   const tilt = (state.toX - state.x) / LANE_W * 0.35;
   ctx.save();
   ctx.translate(state.x + CAR_W / 2, state.y + CAR_H / 2);
@@ -214,9 +244,9 @@ function drawScene() {
 
 // ---------- Cập nhật ----------
 function hit(a, b) {
-  const p = 6;
-  return a.x + p < b.x + CAR_W - p && a.x + CAR_W - p > b.x + p &&
-         a.y + p < b.y + CAR_H - p && a.y + CAR_H - p > b.y + p;
+  const p = b.pad;
+  return a.x + 6 < b.x + b.w - p && a.x + CAR_W - 6 > b.x + p &&
+         a.y + 6 < b.y + b.h - p && a.y + CAR_H - 6 > b.y + p;
 }
 function update(dt) {
   const s = state;
@@ -232,7 +262,7 @@ function update(dt) {
   s.score = Math.floor(s.dist / SCORE_DIV) + s.coinCount * COIN_BONUS;
 
   s.spawnTimer -= dt;
-  if (s.spawnTimer <= 0) { spawnEnemy(); s.spawnTimer = Math.max(0.35, 1.1 - s.speed / 900) * (0.6 + Math.random() * 0.8); }
+  if (s.spawnTimer <= 0) { spawnEnemy(); s.spawnTimer = Math.max(0.3, 1.1 - s.speed / 1400) * (0.6 + Math.random() * 0.8); }
   s.coinTimer -= dt;
   if (s.coinTimer <= 0) { spawnCoin(); s.coinTimer = 1.5 + Math.random() * 2; }
 
