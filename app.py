@@ -87,7 +87,7 @@ function sfxCoin() {
   if (!AC) return; const t = AC.currentTime;
   toneAt(988, 0.09, 'square', 0.25, t, sfxGain); toneAt(1319, 0.18, 'square', 0.25, t + 0.08, sfxGain);
 }
-function sfxCrash(living) {
+function sfxCrash(living, who) {
   if (!AC) return; const t = AC.currentTime;
   if (living) {                                   // tiếng "bịch" + máu văng
     noiseAt(0.3, 0.9, 1200, 120, 'lowpass', t, sfxGain);
@@ -100,10 +100,103 @@ function sfxCrash(living) {
     toneAt(60, 0.9, 'sine', 1.0, t, sfxGain, 25);
   }
   [392, 330, 262, 196].forEach((f, k) => toneAt(f, 0.28, 'triangle', 0.35, t + 1.0 + k * 0.27, sfxGain));
+  if (living) sfxScream(who); else if (who === 'car') sfxScreech();
+  if (who === 'person') {                                 // meme sau tiếng hét
+    const p = HIT_PHRASES[Math.floor(rnd() * HIT_PHRASES.length)];
+    setTimeout(() => speak(p[0], p[1], 1.0, 1.2), 900);
+  }
 }
 function sfxStart() {
   if (!AC) return; const t = AC.currentTime;
   [523, 659, 784].forEach((f, i) => toneAt(f, 0.12, 'square', 0.2, t + i * 0.09, sfxGain));
+}
+
+// ---- giọng nói / tiếng kêu (tổng hợp formant) ----
+let lastVoice = 0, lastPass = 0;
+function voiceAt(fa, fb, d, vol, t, forms, vib) {
+  const o = AC.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(fa, t); o.frequency.linearRampToValueAtTime(fb, t + d);
+  if (vib) {
+    const l = AC.createOscillator(), lg = AC.createGain();
+    l.frequency.value = vib[0]; lg.gain.value = vib[1];
+    l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + d + 0.05);
+  }
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.03);
+  g.gain.setValueAtTime(vol, t + d * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  const dry = AC.createGain(); dry.gain.value = 0.12; o.connect(dry); dry.connect(g);
+  forms.forEach(fm => {
+    const b = AC.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = fm[0]; b.Q.value = fm[1];
+    const fg = AC.createGain(); fg.gain.value = fm[2];
+    o.connect(b); b.connect(fg); fg.connect(g);
+  });
+  g.connect(sfxGain); o.start(t); o.stop(t + d + 0.05);
+}
+function speak(txt, lang, rate, pitch) {                 // giọng "meme" đọc bằng trình duyệt
+  if (muted || !('speechSynthesis' in window)) return;
+  try {
+    const u = new SpeechSynthesisUtterance(txt);
+    u.lang = lang; u.rate = rate || 1; u.pitch = pitch || 1; u.volume = 0.9;
+    window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function stopSpeech() { try { window.speechSynthesis.cancel(); } catch (e) {} }
+
+function sfxDog() {
+  if (!AC) return; const t = AC.currentTime;
+  [0, 0.24].forEach(d => {
+    voiceAt(330, 170, 0.14, 0.9, t + d, [[750, 6, 3], [1500, 6, 2]]);
+    noiseAt(0.06, 0.3, 2500, 800, 'bandpass', t + d, sfxGain);
+  });
+}
+function sfxCat() {
+  if (!AC) return; const t = AC.currentTime;
+  voiceAt(480, 900, 0.2, 0.8, t, [[900, 5, 3], [2300, 6, 2]], [7, 18]);
+  voiceAt(900, 430, 0.35, 0.8, t + 0.2, [[800, 5, 3], [2000, 6, 2]], [7, 12]);
+}
+function sfxCow() { if (!AC) return; voiceAt(120, 100, 1.0, 0.9, AC.currentTime, [[320, 5, 4], [650, 5, 2]], [5, 5]); }
+function sfxHonk() {
+  if (!AC) return; const t = AC.currentTime;
+  [0, 0.22].forEach(d => { toneAt(420, 0.16, 'square', 0.28, t + d, sfxGain); toneAt(530, 0.16, 'square', 0.18, t + d, sfxGain); });
+}
+function sfxPass() {                                      // xe vụt qua
+  if (!AC) return; const t = AC.currentTime;
+  if (t - lastPass < 0.3) return; lastPass = t;
+  toneAt(240, 0.6, 'sawtooth', 0.2, t, sfxGain, 80);
+  noiseAt(0.6, 0.4, 1800, 250, 'bandpass', t, sfxGain);
+}
+function sfxScreech() {                                   // phanh rít
+  if (!AC) return; const t = AC.currentTime;
+  noiseAt(0.7, 0.5, 6000, 2500, 'highpass', t, sfxGain);
+  toneAt(1800, 0.6, 'sawtooth', 0.12, t, sfxGain, 1100);
+}
+function sfxScream(who) {                                 // tiếng hét khi bị tông
+  if (!AC) return; const t = AC.currentTime;
+  if (who === 'person') {
+    voiceAt(600, 1250, 0.45, 1.0, t, [[900, 4, 3], [1500, 5, 3], [2800, 6, 1.5]], [11, 50]);
+    voiceAt(1250, 1000, 0.75, 1.0, t + 0.45, [[850, 4, 3], [1600, 5, 3], [2900, 6, 1.5]], [13, 60]);
+    voiceAt(700, 1300, 0.4, 0.6, t + 0.05, [[1000, 4, 3], [2000, 5, 2]], [9, 40]);
+  } else if (who === 'dog') {
+    voiceAt(800, 1800, 0.15, 0.9, t, [[1200, 5, 3], [2600, 6, 2]]);
+    voiceAt(1800, 600, 0.35, 0.9, t + 0.15, [[1200, 5, 3], [2400, 6, 2]], [9, 60]);
+  } else if (who === 'cat') {
+    voiceAt(900, 2300, 0.55, 0.9, t, [[1500, 4, 3], [3000, 6, 2]], [28, 80]);
+    noiseAt(0.5, 0.3, 6000, 3000, 'bandpass', t, sfxGain);
+  } else if (who === 'cow') {
+    voiceAt(140, 230, 1.0, 1.0, t, [[350, 5, 4], [800, 5, 2]], [6, 10]);
+  }
+}
+const IDLE_PHRASES = [['Ê ê ê!', 'vi-VN'], ['Ơ kìa!', 'vi-VN'], ['Bruh', 'en-US'], ['Ayo?', 'en-US'], ['Đi đâu vậy trời', 'vi-VN']];
+const HIT_PHRASES = [['Ối giời ơi!', 'vi-VN'], ['Bruh', 'en-US'], ['Oh no no no no', 'en-US'], ['Trời ơi!', 'vi-VN']];
+function ambientSound(e) {                                // âm thanh khi vật cản xuất hiện
+  const now = performance.now();
+  if (now - lastVoice < 700) return;
+  if (e.snd === 'car') { if (rnd() < 0.6) { sfxHonk(); lastVoice = now; } return; }
+  lastVoice = now;
+  if (e.snd === 'dog') sfxDog();
+  else if (e.snd === 'cat') sfxCat();
+  else if (e.snd === 'cow') sfxCow();
+  else if (e.snd === 'person') { const p = IDLE_PHRASES[Math.floor(rnd() * IDLE_PHRASES.length)]; speak(p[0], p[1], 1.05, 1.1); }
 }
 
 // nhạc nền: 4 hợp âm Am - F - C - G, tempo tăng dần theo tốc độ xe
@@ -141,6 +234,7 @@ btnM.addEventListener('click', () => {
   initAudio(); muted = !muted;
   if (master) master.gain.value = muted ? 0 : 0.8;
   btnM.textContent = muted ? '🔇' : '🔊';
+  if (muted) stopSpeech();
   canvas.focus();
 });
 ['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, initAudio));
@@ -204,8 +298,8 @@ function reset() {
 }
 reset();
 
-function startGame() { reset(); scene = 'play'; sfxStart(); }
-function toMenu() { scene = 'menu'; state.paused = false; }
+function startGame() { stopSpeech(); reset(); scene = 'play'; sfxStart(); }
+function toMenu() { stopSpeech(); scene = 'menu'; state.paused = false; }
 function gameOver(e) {
   lastRank = addScore(state.score, state.coinCount);
   const living = e.kind === 'emoji' && !!e.walk;          // người / động vật
@@ -216,7 +310,7 @@ function gameOver(e) {
   else e.dead = true;
   state.fx.spin = living ? 0 : (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.35);
   scene = 'crash';
-  sfxCrash(living);
+  sfxCrash(living, e.snd);
 }
 const menuActions = [startGame, () => { scene = 'scores'; }, () => { scene = 'help'; }, () => { scene = 'name'; }];
 const menuLabels = ['▶  Chơi ngay', '🏆  Điểm cao', '❓  Hướng dẫn', '✏️  Đổi tên'];
@@ -225,12 +319,12 @@ const menuLabels = ['▶  Chơi ngay', '🏆  Điểm cao', '❓  Hướng dẫn
 //  CHƯỚNG NGẠI VẬT
 // =====================================================================
 const OBSTACLES = [
-  { kind: 'car', w: CAR_W, h: CAR_H, pad: 6, weight: 5 },
-  { kind: 'car', w: CAR_W, h: CAR_H, pad: 6, weight: 3 },
-  { kind: 'emoji', e: '🚶', w: 28, h: 50, size: 46, pad: 3, weight: 2, walk: 55 },
-  { kind: 'emoji', e: '🐕', w: 44, h: 32, size: 40, pad: 3, weight: 2, walk: 100 },
-  { kind: 'emoji', e: '🐈', w: 34, h: 30, size: 34, pad: 3, weight: 2, walk: 85 },
-  { kind: 'emoji', e: '🐄', w: 50, h: 40, size: 46, pad: 4, weight: 1, walk: 35 },
+  { kind: 'car', snd: 'car', w: CAR_W, h: CAR_H, pad: 6, weight: 5 },
+  { kind: 'car', snd: 'car', w: CAR_W, h: CAR_H, pad: 6, weight: 3 },
+  { kind: 'emoji', snd: 'person', e: '🚶', w: 28, h: 50, size: 46, pad: 3, weight: 2, walk: 55 },
+  { kind: 'emoji', snd: 'dog', e: '🐕', w: 44, h: 32, size: 40, pad: 3, weight: 2, walk: 100 },
+  { kind: 'emoji', snd: 'cat', e: '🐈', w: 34, h: 30, size: 34, pad: 3, weight: 2, walk: 85 },
+  { kind: 'emoji', snd: 'cow', e: '🐄', w: 50, h: 40, size: 46, pad: 4, weight: 1, walk: 35 },
   { kind: 'emoji', e: '🚧', w: 42, h: 36, size: 40, pad: 3, weight: 2 },
   { kind: 'emoji', e: '🛢️', w: 32, h: 40, size: 38, pad: 3, weight: 1 },
   { kind: 'emoji', e: '🪨', w: 38, h: 32, size: 36, pad: 3, weight: 1 },
@@ -607,6 +701,11 @@ function update(dt) {
 
   for (const e of s.enemies) {
     e.y += (s.speed - e.v) * dt;
+    if (!e.said && e.y > 30) { e.said = true; ambientSound(e); }
+    if (e.kind === 'car' && !e.passed && e.y > s.y + CAR_H) {
+      e.passed = true;
+      if (Math.abs(laneOf(e) - s.lane) <= 1) sfxPass();
+    }
     if (e.vx) {
       e.x += e.vx * dt;
       const minX = ROAD_X + 2, maxX = ROAD_X + ROAD_W - e.w - 2;
