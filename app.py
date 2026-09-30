@@ -4,7 +4,6 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Game Đua Xe 2D", page_icon="🏎️", layout="centered")
 
 st.title("🏎️ Game Đua Xe 2D")
-st.caption("Click vào khung game để bắt đầu • ← → hoặc A D để lái • Space/Enter để chơi lại • P để tạm dừng")
 
 GAME_HTML = """
 <div style="display:flex;flex-direction:column;align-items:center;font-family:sans-serif;">
@@ -23,80 +22,188 @@ const W = canvas.width, H = canvas.height;
 
 const ROAD_X = 40, ROAD_W = 320, LANES = 4, LANE_W = ROAD_W / LANES;
 const CAR_W = 40, CAR_H = 70;
+const COLORS = ['#e74c3c','#3498db','#f1c40f','#9b59b6','#1abc9c','#e67e22'];
 
-let state, keys = {}, lastT = 0, best = 0;
-try { best = parseInt(localStorage.getItem('racing_best') || '0'); } catch(e) {}
+// ---------- Điểm cao (localStorage, có dự phòng bộ nhớ tạm) ----------
+const KEY = 'racing_scores_v2';
+let memScores = [];
+function loadScores() {
+  try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return memScores; }
+}
+function saveScores(list) {
+  memScores = list;
+  try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {}
+}
+let scores = loadScores();
+function addScore(s, coins) {
+  const entry = { s, coins, d: new Date().toLocaleDateString('vi-VN') };
+  scores.push(entry);
+  scores.sort((a, b) => b.s - a.s);
+  scores = scores.slice(0, 10);
+  saveScores(scores);
+  return scores.indexOf(entry);            // -1 nếu không lọt top 10
+}
+const bestScore = () => scores.length ? scores[0].s : 0;
+
+// ---------- Trạng thái ----------
+let scene = 'menu';                        // menu | play | over | scores | help
+let menuSel = 0, keys = {}, lastT = 0, buttons = [];
+let state, lastRank = -1;
 
 function reset() {
   state = {
-    running: false, over: false, paused: false,
-    x: ROAD_X + ROAD_W / 2 - CAR_W / 2, y: H - CAR_H - 30,
-    vx: 0, speed: 260, dist: 0, score: 0,
-    enemies: [], spawnTimer: 0, roadOffset: 0, coins: [], coinTimer: 0, coinCount: 0
+    paused: false, x: ROAD_X + ROAD_W / 2 - CAR_W / 2, y: H - CAR_H - 30,
+    vx: 0, speed: 260, dist: 0, score: 0, enemies: [], coins: [],
+    spawnTimer: 0, coinTimer: 0, coinCount: 0, roadOffset: state ? state.roadOffset : 0
   };
 }
 reset();
 
-const COLORS = ['#e74c3c','#3498db','#f1c40f','#9b59b6','#1abc9c','#e67e22'];
+function startGame() { reset(); scene = 'play'; }
+function toMenu() { scene = 'menu'; state.paused = false; }
+function gameOver() {
+  lastRank = addScore(state.score, state.coinCount);
+  scene = 'over';
+}
 
+const menuActions = [startGame, () => { scene = 'scores'; }, () => { scene = 'help'; }];
+const menuLabels = ['▶  Chơi ngay', '🏆  Điểm cao', '❓  Hướng dẫn'];
+
+// ---------- Sinh vật thể ----------
 function spawnEnemy() {
-  // không chặn hết làn: chỉ spawn 1 xe mỗi lần, tránh chồng lên xe khác
   const lane = Math.floor(Math.random() * LANES);
   const x = ROAD_X + lane * LANE_W + (LANE_W - CAR_W) / 2;
   if (state.enemies.some(e => Math.abs(e.x - x) < 5 && e.y < 120)) return;
-  state.enemies.push({
-    x, y: -CAR_H - 10, color: COLORS[Math.floor(Math.random() * COLORS.length)],
-    v: 60 + Math.random() * 80
-  });
+  state.enemies.push({ x, y: -CAR_H - 10, color: COLORS[Math.floor(Math.random() * COLORS.length)], v: 60 + Math.random() * 80 });
 }
-
 function spawnCoin() {
   const lane = Math.floor(Math.random() * LANES);
   const x = ROAD_X + lane * LANE_W + LANE_W / 2;
-  if (state.enemies.some(e => Math.abs(e.x + CAR_W/2 - x) < 30 && e.y < 100)) return;
+  if (state.enemies.some(e => Math.abs(e.x + CAR_W / 2 - x) < 30 && e.y < 100)) return;
   state.coins.push({ x, y: -20 });
 }
 
+// ---------- Vẽ ----------
 function drawCar(x, y, color, player) {
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.fillRect(x + 3, y + 4, CAR_W, CAR_H);
-  ctx.fillStyle = color;
-  ctx.beginPath(); ctx.roundRect(x, y, CAR_W, CAR_H, 8); ctx.fill();
-  ctx.fillStyle = '#111';                      // bánh xe
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x + 3, y + 4, CAR_W, CAR_H);
+  ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x, y, CAR_W, CAR_H, 8); ctx.fill();
+  ctx.fillStyle = '#111';
   ctx.fillRect(x - 4, y + 10, 5, 16); ctx.fillRect(x + CAR_W - 1, y + 10, 5, 16);
   ctx.fillRect(x - 4, y + CAR_H - 26, 5, 16); ctx.fillRect(x + CAR_W - 1, y + CAR_H - 26, 5, 16);
-  ctx.fillStyle = 'rgba(180,220,255,0.9)';      // kính
-  ctx.fillRect(x + 6, y + (player ? 16 : 30), CAR_W - 12, 16);
+  ctx.fillStyle = 'rgba(180,220,255,0.9)'; ctx.fillRect(x + 6, y + (player ? 16 : 30), CAR_W - 12, 16);
   if (player) {
-    ctx.fillStyle = '#fff';                     // sọc đua
-    ctx.fillRect(x + CAR_W/2 - 3, y, 6, CAR_H);
-    ctx.fillStyle = '#ffe9a0';
-    ctx.fillRect(x + 4, y + 2, 8, 4); ctx.fillRect(x + CAR_W - 12, y + 2, 8, 4);
+    ctx.fillStyle = '#fff'; ctx.fillRect(x + CAR_W / 2 - 3, y, 6, CAR_H);
+    ctx.fillStyle = '#ffe9a0'; ctx.fillRect(x + 4, y + 2, 8, 4); ctx.fillRect(x + CAR_W - 12, y + 2, 8, 4);
   }
 }
-
 function drawRoad() {
-  ctx.fillStyle = '#2e7d32'; ctx.fillRect(0, 0, W, H);            // cỏ
-  ctx.fillStyle = '#3a3a3a'; ctx.fillRect(ROAD_X, 0, ROAD_W, H);  // đường
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(ROAD_X - 4, 0, 4, H); ctx.fillRect(ROAD_X + ROAD_W, 0, 4, H);
+  ctx.fillStyle = '#2e7d32'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#3a3a3a'; ctx.fillRect(ROAD_X, 0, ROAD_W, H);
+  ctx.fillStyle = '#fff'; ctx.fillRect(ROAD_X - 4, 0, 4, H); ctx.fillRect(ROAD_X + ROAD_W, 0, 4, H);
   ctx.fillStyle = '#ddd';
-  for (let l = 1; l < LANES; l++) {
-    for (let y = -40 + (state.roadOffset % 40); y < H; y += 40) {
+  for (let l = 1; l < LANES; l++)
+    for (let y = -40 + (state.roadOffset % 40); y < H; y += 40)
       ctx.fillRect(ROAD_X + l * LANE_W - 2, y, 4, 20);
-    }
+}
+function text(t, x, y, size, color, align) {
+  ctx.font = 'bold ' + size + 'px sans-serif';
+  ctx.fillStyle = color || '#fff'; ctx.textAlign = align || 'center';
+  ctx.fillText(t, x, y);
+}
+function overlay(a) { ctx.fillStyle = 'rgba(0,0,0,' + a + ')'; ctx.fillRect(0, 0, W, H); }
+function button(label, x, y, w, h, action, selected, idx) {
+  buttons.push({ x, y, w, h, action, idx });
+  ctx.fillStyle = selected ? '#e53935' : 'rgba(255,255,255,0.12)';
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.fill();
+  ctx.strokeStyle = selected ? '#fff' : 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2; ctx.stroke();
+  text(label, x + w / 2, y + h / 2 + 7, 19, '#fff');
+}
+
+function drawHUD() {
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, 34);
+  text('Điểm: ' + state.score, 10, 23, 16, '#fff', 'left');
+  text('🪙 ' + state.coinCount, W / 2, 23, 16, '#ffd700');
+  text('Kỷ lục: ' + Math.max(bestScore(), state.score), W - 10, 23, 16, '#8f8', 'right');
+  text(Math.round(state.speed / 3) + ' km/h', W - 10, H - 12, 14, '#fff', 'right');
+}
+
+function drawScene() {
+  buttons = [];
+  drawRoad();
+
+  if (scene === 'menu') {
+    overlay(0.55);
+    text('🏎️ ĐUA XE 2D', W / 2, 130, 40);
+    text('Điểm cao nhất: ' + bestScore(), W / 2, 170, 16, '#8f8');
+    menuLabels.forEach((l, i) => button(l, 100, 230 + i * 65, 200, 48, menuActions[i], i === menuSel, i));
+    text('↑ ↓ chọn • Enter xác nhận', W / 2, H - 25, 13, '#aaa');
+    return;
+  }
+
+  if (scene === 'scores') {
+    overlay(0.75);
+    text('🏆 BẢNG ĐIỂM CAO', W / 2, 70, 28, '#ffd700');
+    if (!scores.length) text('Chưa có điểm nào. Chơi thử đi!', W / 2, 260, 16, '#ccc');
+    scores.forEach((r, i) => {
+      const y = 115 + i * 34;
+      const medal = ['🥇', '🥈', '🥉'][i] || (i + 1) + '.';
+      text(medal, 50, y, 18, '#fff', 'left');
+      text(r.s + ' điểm', 100, y, 18, i === 0 ? '#ffd700' : '#fff', 'left');
+      text('🪙' + (r.coins || 0), 240, y, 15, '#ffd700', 'left');
+      text(r.d, W - 40, y, 13, '#aaa', 'right');
+    });
+    button('⬅ Quay lại', 40, H - 70, 150, 44, toMenu, true);
+    button('🗑 Xóa hết', 210, H - 70, 150, 44, () => { scores = []; saveScores([]); }, false);
+    return;
+  }
+
+  if (scene === 'help') {
+    overlay(0.75);
+    text('❓ HƯỚNG DẪN', W / 2, 80, 28);
+    const lines = ['← → hoặc A D : lái xe', 'P hoặc Esc : tạm dừng', 'Nhặt xu 🪙 : +50 điểm',
+                   'Tránh va chạm với xe khác', 'Xe càng chạy càng nhanh', 'Điện thoại: dùng 2 nút bên dưới'];
+    lines.forEach((l, i) => text(l, W / 2, 150 + i * 42, 17, '#eee'));
+    button('⬅ Quay lại', 100, H - 80, 200, 46, toMenu, true);
+    return;
+  }
+
+  // play / over
+  for (const c of state.coins) {
+    ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(c.x, c.y, 10, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  for (const e of state.enemies) drawCar(e.x, e.y, e.color, false);
+  drawCar(state.x, state.y, '#d32f2f', true);
+  drawHUD();
+
+  if (scene === 'over') {
+    overlay(0.7);
+    text('💥 GAME OVER', W / 2, 190, 38, '#ff5252');
+    text('Điểm: ' + state.score, W / 2, 240, 24);
+    if (lastRank === 0) text('🏆 KỶ LỤC MỚI!', W / 2, 280, 22, '#ffd700');
+    else if (lastRank > 0) text('Xếp hạng #' + (lastRank + 1) + ' trong top 10', W / 2, 280, 17, '#8f8');
+    else text('Kỷ lục hiện tại: ' + bestScore(), W / 2, 280, 16, '#aaa');
+    button('🔄 Chơi lại', 100, 330, 200, 48, startGame, true);
+    button('🏠 Menu', 100, 395, 200, 48, toMenu, false);
+    text('Enter: chơi lại • Esc: menu', W / 2, H - 25, 13, '#aaa');
+  } else if (state.paused) {
+    overlay(0.6);
+    text('⏸ TẠM DỪNG', W / 2, 220, 34);
+    button('▶ Tiếp tục', 100, 270, 200, 48, () => { state.paused = false; }, true);
+    button('🏠 Về menu', 100, 335, 200, 48, toMenu, false);
   }
 }
 
+// ---------- Cập nhật ----------
 function hit(a, b) {
-  const p = 6; // nới lỏng va chạm
+  const p = 6;
   return a.x + p < b.x + CAR_W - p && a.x + CAR_W - p > b.x + p &&
          a.y + p < b.y + CAR_H - p && a.y + CAR_H - p > b.y + p;
 }
-
 function update(dt) {
   const s = state;
-  if (!s.running || s.over || s.paused) return;
+  if (scene !== 'play') { s.roadOffset += 120 * dt; return; }
+  if (s.paused) return;
 
   const left = keys['ArrowLeft'] || keys['a'] || keys['A'] || keys.__L;
   const right = keys['ArrowRight'] || keys['d'] || keys['D'] || keys.__R;
@@ -111,10 +218,7 @@ function update(dt) {
   s.score = Math.floor(s.dist / 10) + s.coinCount * 50;
 
   s.spawnTimer -= dt;
-  if (s.spawnTimer <= 0) {
-    spawnEnemy();
-    s.spawnTimer = Math.max(0.35, 1.1 - s.speed / 900) * (0.6 + Math.random() * 0.8);
-  }
+  if (s.spawnTimer <= 0) { spawnEnemy(); s.spawnTimer = Math.max(0.35, 1.1 - s.speed / 900) * (0.6 + Math.random() * 0.8); }
   s.coinTimer -= dt;
   if (s.coinTimer <= 0) { spawnCoin(); s.coinTimer = 1.5 + Math.random() * 2; }
 
@@ -123,93 +227,67 @@ function update(dt) {
   s.enemies = s.enemies.filter(e => e.y < H + 100);
   s.coins = s.coins.filter(c => c.y < H + 30);
 
-  const me = { x: s.x, y: s.y };
-  for (const e of s.enemies) {
-    if (hit(me, e)) {
-      s.over = true;
-      if (s.score > best) {
-        best = s.score;
-        try { localStorage.setItem('racing_best', String(best)); } catch(err) {}
-      }
-    }
-  }
   s.coins = s.coins.filter(c => {
-    if (Math.abs(c.x - (s.x + CAR_W/2)) < 26 && Math.abs(c.y - (s.y + CAR_H/2)) < 45) {
-      s.coinCount++; return false;
-    }
+    if (Math.abs(c.x - (s.x + CAR_W / 2)) < 26 && Math.abs(c.y - (s.y + CAR_H / 2)) < 45) { s.coinCount++; return false; }
     return true;
   });
-}
-
-function text(t, x, y, size, color, align) {
-  ctx.font = 'bold ' + size + 'px sans-serif';
-  ctx.fillStyle = color || '#fff';
-  ctx.textAlign = align || 'center';
-  ctx.fillText(t, x, y);
-}
-
-function draw() {
-  drawRoad();
-  for (const c of state.coins) {
-    ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(c.x, c.y, 10, 0, 7); ctx.fill();
-    ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2; ctx.stroke();
-  }
-  for (const e of state.enemies) drawCar(e.x, e.y, e.color, false);
-  drawCar(state.x, state.y, '#d32f2f', true);
-
-  // HUD
-  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, 34);
-  text('Điểm: ' + state.score, 10, 23, 16, '#fff', 'left');
-  text('🪙 ' + state.coinCount, W/2, 23, 16, '#ffd700');
-  text('Kỷ lục: ' + best, W - 10, 23, 16, '#8f8', 'right');
-  text(Math.round(state.speed / 3) + ' km/h', W - 10, H - 12, 14, '#fff', 'right');
-
-  if (!state.running) {
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
-    text('🏎️ ĐUA XE 2D', W/2, 240, 36);
-    text('Nhấn Space / Enter hoặc click để bắt đầu', W/2, 290, 15, '#ddd');
-    text('← → hoặc A D để lái • Nhặt xu 🪙 • Tránh xe', W/2, 320, 14, '#aaa');
-  } else if (state.over) {
-    ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, W, H);
-    text('💥 GAME OVER', W/2, 250, 38, '#ff5252');
-    text('Điểm: ' + state.score, W/2, 295, 22);
-    text('Nhấn Space / Enter để chơi lại', W/2, 335, 15, '#ddd');
-  } else if (state.paused) {
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
-    text('⏸ TẠM DỪNG', W/2, 300, 32);
-  }
+  s.score = Math.floor(s.dist / 10) + s.coinCount * 50;
+  for (const e of s.enemies) if (hit({ x: s.x, y: s.y }, e)) { gameOver(); break; }
 }
 
 function loop(t) {
   const dt = Math.min(0.05, (t - lastT) / 1000 || 0);
   lastT = t;
   update(dt);
-  draw();
+  drawScene();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
-function startOrRestart() {
-  if (!state.running || state.over) { reset(); state.running = true; }
-}
-
+// ---------- Điều khiển ----------
 window.addEventListener('keydown', e => {
-  keys[e.key] = true;
-  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
-  if (e.key === ' ' || e.key === 'Enter') startOrRestart();
-  if (e.key === 'p' || e.key === 'P') { if (state.running && !state.over) state.paused = !state.paused; }
+  const k = e.key;
+  keys[k] = true;
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(k)) e.preventDefault();
+
+  if (scene === 'menu') {
+    if (k === 'ArrowUp' || k === 'w' || k === 'W') menuSel = (menuSel + 2) % 3;
+    else if (k === 'ArrowDown' || k === 's' || k === 'S') menuSel = (menuSel + 1) % 3;
+    else if (k === 'Enter' || k === ' ') menuActions[menuSel]();
+  } else if (scene === 'play') {
+    if (k === 'p' || k === 'P' || k === 'Escape') state.paused = !state.paused;
+    else if (state.paused && (k === 'm' || k === 'M')) toMenu();
+  } else if (scene === 'over') {
+    if (k === 'Enter' || k === ' ') startGame();
+    else if (k === 'Escape' || k === 'm' || k === 'M') toMenu();
+  } else if (k === 'Escape' || k === 'Enter' || k === ' ') toMenu();
 });
 window.addEventListener('keyup', e => { keys[e.key] = false; });
-canvas.addEventListener('click', () => { canvas.focus(); startOrRestart(); });
 
-// Nút cảm ứng cho điện thoại
+function canvasPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+}
+function buttonAt(p) {
+  return buttons.find(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
+}
+canvas.addEventListener('click', e => {
+  canvas.focus();
+  const b = buttonAt(canvasPos(e));
+  if (b) b.action();
+});
+canvas.addEventListener('mousemove', e => {
+  if (scene !== 'menu') return;
+  const b = buttonAt(canvasPos(e));
+  if (b && b.idx !== undefined) menuSel = b.idx;
+});
+
 function bindBtn(id, key) {
   const b = document.getElementById(id);
-  const on = e => { e.preventDefault(); keys[key] = true; if (!state.running || state.over) startOrRestart(); };
+  const on = e => { e.preventDefault(); keys[key] = true; };
   const off = e => { e.preventDefault(); keys[key] = false; };
   b.addEventListener('mousedown', on); b.addEventListener('touchstart', on);
-  b.addEventListener('mouseup', off); b.addEventListener('mouseleave', off);
-  b.addEventListener('touchend', off);
+  b.addEventListener('mouseup', off); b.addEventListener('mouseleave', off); b.addEventListener('touchend', off);
 }
 bindBtn('btnL', '__L'); bindBtn('btnR', '__R');
 canvas.focus();
@@ -217,8 +295,3 @@ canvas.focus();
 """
 
 components.html(GAME_HTML, height=720, scrolling=False)
-
-st.markdown(
-    "**Mẹo:** Xe càng chạy càng nhanh. Nhặt xu 🪙 được +50 điểm. "
-    "Kỷ lục được lưu trong trình duyệt của bạn."
-)
