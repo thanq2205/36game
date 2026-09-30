@@ -7,12 +7,20 @@ st.title("🏎️ Đua Xe")
 
 GAME_HTML = """
 <div style="display:flex;flex-direction:column;align-items:center;font-family:sans-serif;">
-  <input id="uname" type="text" maxlength="14" placeholder="✏️ Nhập tên của bạn" autocomplete="off"
-    style="width:260px;max-width:90%;margin-bottom:10px;padding:9px 12px;font-size:16px;border-radius:8px;border:2px solid #666;text-align:center;">
-  <canvas id="game" width="400" height="600" tabindex="0"
-    style="background:#222;border:3px solid #444;border-radius:8px;max-width:100%;outline:none;touch-action:none;"></canvas>
+  <div style="position:relative;display:inline-block;max-width:100%;">
+    <canvas id="game" width="400" height="600" tabindex="0"
+      style="display:block;background:#222;border:3px solid #444;border-radius:8px;max-width:100%;outline:none;touch-action:none;"></canvas>
+    <div id="nameBox" style="position:absolute;left:0;right:0;top:36%;text-align:center;display:none;">
+      <input id="uname" type="text" maxlength="14" placeholder="Tên của bạn" autocomplete="off"
+        style="width:220px;padding:10px 12px;font-size:18px;border-radius:10px;border:3px solid #ffd54f;text-align:center;outline:none;">
+      <div style="margin-top:14px;">
+        <button id="btnGo" style="font-size:18px;font-weight:bold;padding:10px 28px;border-radius:10px;border:none;background:#e53935;color:#fff;cursor:pointer;">Vào game ▶</button>
+      </div>
+    </div>
+  </div>
   <div style="margin-top:10px;display:flex;gap:12px;">
     <button id="btnL" style="font-size:24px;padding:10px 30px;border-radius:8px;">⬅️</button>
+    <button id="btnM" style="font-size:24px;padding:10px 18px;border-radius:8px;">🔊</button>
     <button id="btnR" style="font-size:24px;padding:10px 30px;border-radius:8px;">➡️</button>
   </div>
 </div>
@@ -24,47 +32,148 @@ const W = canvas.width, H = canvas.height;
 
 const ROAD_X = 40, ROAD_W = 320, LANES = 4, LANE_W = ROAD_W / LANES;
 const CAR_W = 40, CAR_H = 70;
-const START_SPEED = 240, ACCEL = 16, MAX_SPEED = 1100;   // tốc độ tăng dần đều
-const SCORE_DIV = 150, COIN_BONUS = 5;                  // điểm tăng chậm
-const LANE_TIME = 0.22;                                 // giây để đổi 1 làn
+const START_SPEED = 240, ACCEL = 16, MAX_SPEED = 1100;
+const SCORE_DIV = 150, COIN_BONUS = 5;
+const LANE_TIME = 0.22;
 const easeInOut = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const COLORS = ['#e74c3c','#3498db','#f1c40f','#9b59b6','#1abc9c','#e67e22'];
 
-// ---------- Điểm cao (localStorage, có dự phòng bộ nhớ tạm) ----------
+// =====================================================================
+//  ÂM THANH (WebAudio, tự tổng hợp - không cần file)
+// =====================================================================
+let AC = null, master, musicGain, sfxGain, engOsc, engGain, noiseBuf, muted = false;
+const m2f = m => 440 * Math.pow(2, (m - 69) / 12);
+
+function initAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; return; }
+  master = AC.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(AC.destination);
+  musicGain = AC.createGain(); musicGain.gain.value = 0.16; musicGain.connect(master);
+  sfxGain = AC.createGain(); sfxGain.gain.value = 0.55; sfxGain.connect(master);
+
+  noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+
+  // tiếng động cơ
+  engOsc = AC.createOscillator(); engOsc.type = 'sawtooth'; engOsc.frequency.value = 60;
+  const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420;
+  engGain = AC.createGain(); engGain.gain.value = 0;
+  engOsc.connect(f); f.connect(engGain); engGain.connect(sfxGain); engOsc.start();
+
+  nextT = AC.currentTime + 0.1;
+  setInterval(scheduler, 50);
+}
+
+function toneAt(f, d, type, vol, t, dest, slide) {
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + d);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  o.connect(g); g.connect(dest); o.start(t); o.stop(t + d + 0.03);
+}
+function noiseAt(d, vol, f0, f1, ftype, t, dest) {
+  const src = AC.createBufferSource(); src.buffer = noiseBuf;
+  const fl = AC.createBiquadFilter(); fl.type = ftype;
+  fl.frequency.setValueAtTime(f0, t); fl.frequency.exponentialRampToValueAtTime(f1, t + d);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  src.connect(fl); fl.connect(g); g.connect(dest); src.start(t); src.stop(t + d + 0.03);
+}
+
+function sfxSwoosh() { if (!AC) return; noiseAt(0.2, 0.5, 500, 2200, 'bandpass', AC.currentTime, sfxGain); }
+function sfxCoin() {
+  if (!AC) return; const t = AC.currentTime;
+  toneAt(988, 0.09, 'square', 0.25, t, sfxGain); toneAt(1319, 0.18, 'square', 0.25, t + 0.08, sfxGain);
+}
+function sfxCrash() {
+  if (!AC) return; const t = AC.currentTime;
+  noiseAt(0.8, 1.0, 3000, 80, 'lowpass', t, sfxGain);
+  toneAt(140, 0.5, 'sawtooth', 0.8, t, sfxGain, 35);
+  [392, 330, 262, 196].forEach((f, i) => toneAt(f, 0.28, 'triangle', 0.35, t + 0.55 + i * 0.27, sfxGain));
+}
+function sfxStart() {
+  if (!AC) return; const t = AC.currentTime;
+  [523, 659, 784].forEach((f, i) => toneAt(f, 0.12, 'square', 0.2, t + i * 0.09, sfxGain));
+}
+
+// nhạc nền: 4 hợp âm Am - F - C - G, tempo tăng dần theo tốc độ xe
+const CHORDS = [[57, 60, 64], [53, 57, 60], [55, 60, 64], [55, 59, 62]];
+const BASS = [45, 41, 48, 43], ARP = [0, 1, 2, 1, 0, 1, 2, 1];
+let nextT = 0, stepI = 0, stepD = 0.115;
+
+function musicShouldPlay() { return scene !== 'over' && !(scene === 'play' && state.paused); }
+function playStep(i, t) {
+  const ci = Math.floor(i / 8) % 4, chord = CHORDS[ci], st = i % 8;
+  if (st % 2 === 0) toneAt(m2f(BASS[ci] + (st % 4 === 2 ? 12 : 0)), stepD * 1.8, 'triangle', 0.6, t, musicGain);
+  toneAt(m2f(chord[ARP[st]] + 12), stepD * 0.9, 'square', 0.2, t, musicGain);
+  if (i % 4 === 0) toneAt(150, 0.12, 'sine', 0.7, t, musicGain, 50);
+  if (i % 2 === 1) noiseAt(0.04, 0.12, 7000, 7000, 'highpass', t, musicGain);
+}
+function scheduler() {
+  if (!AC || AC.state !== 'running') return;
+  if (nextT < AC.currentTime - 0.3) nextT = AC.currentTime + 0.05;
+  while (nextT < AC.currentTime + 0.25) {
+    const bpm = scene === 'play' ? Math.min(190, 125 + (state.speed - START_SPEED) / 12) : 125;
+    stepD = 60 / bpm / 4;
+    if (musicShouldPlay()) playStep(stepI, nextT);
+    stepI++; nextT += stepD;
+  }
+}
+function audioTick() {
+  if (!AC) return;
+  const on = scene === 'play' && !state.paused;
+  engGain.gain.setTargetAtTime(on ? 0.11 : 0, AC.currentTime, 0.08);
+  if (on) engOsc.frequency.setTargetAtTime(55 + state.speed * 0.13, AC.currentTime, 0.1);
+}
+
+const btnM = document.getElementById('btnM');
+btnM.addEventListener('click', () => {
+  initAudio(); muted = !muted;
+  if (master) master.gain.value = muted ? 0 : 0.8;
+  btnM.textContent = muted ? '🔇' : '🔊';
+  canvas.focus();
+});
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, initAudio));
+
+// =====================================================================
+//  ĐIỂM CAO + TÊN NGƯỜI CHƠI
+// =====================================================================
 const KEY = 'racing_scores_v2';
 let memScores = [];
-function loadScores() {
-  try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return memScores; }
-}
-function saveScores(list) {
-  memScores = list;
-  try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {}
-}
+function loadScores() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return memScores; } }
+function saveScores(list) { memScores = list; try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} }
 let scores = loadScores();
-
-// ---------- Tên người chơi ----------
-const nameInput = document.getElementById('uname');
-let username = '';
-try { username = localStorage.getItem('racing_user') || ''; } catch (e) {}
-nameInput.value = username;
-nameInput.addEventListener('input', () => {
-  username = nameInput.value.trim().slice(0, 14);
-  try { localStorage.setItem('racing_user', username); } catch (e) {}
-});
-const getName = () => username || 'Bạn';
 function addScore(s, coins) {
   const entry = { s, coins, n: getName(), d: new Date().toLocaleDateString('vi-VN') };
   scores.push(entry);
   scores.sort((a, b) => b.s - a.s);
   scores = scores.slice(0, 10);
   saveScores(scores);
-  return scores.indexOf(entry);            // -1 nếu không lọt top 10
+  return scores.indexOf(entry);
 }
 const bestScore = () => scores.length ? scores[0].s : 0;
 
-// ---------- Trạng thái ----------
-let scene = 'menu';                        // menu | play | over | scores | help
-let menuSel = 0, keys = {}, lastT = 0, buttons = [];
+const nameInput = document.getElementById('uname');
+const nameBox = document.getElementById('nameBox');
+let username = '', nameErr = 0;
+try { username = localStorage.getItem('racing_user') || ''; } catch (e) {}
+const getName = () => username || 'Bạn';
+function submitName() {
+  const v = nameInput.value.trim().slice(0, 14);
+  if (!v) { nameErr = 1.8; nameInput.focus(); return; }
+  username = v;
+  try { localStorage.setItem('racing_user', v); } catch (e) {}
+  nameInput.blur(); canvas.focus();
+  scene = 'menu';
+}
+document.getElementById('btnGo').addEventListener('click', submitName);
+
+// =====================================================================
+//  TRẠNG THÁI GAME
+// =====================================================================
+let scene = 'name';                  // name | menu | play | over | scores | help
+let menuSel = 0, lastT = 0, buttons = [], prevScene = null;
 let state, lastRank = -1;
 
 const laneX = l => ROAD_X + l * LANE_W + (LANE_W - CAR_W) / 2;
@@ -74,8 +183,8 @@ function moveLane(d) {
   if (nl === state.lane) return;
   state.lane = nl;
   state.fromX = state.x; state.toX = laneX(nl); state.t = 0;
+  sfxSwoosh();
 }
-
 function reset() {
   state = {
     paused: false, lane: 1, x: laneX(1), fromX: laneX(1), toX: laneX(1), t: 1, y: H - CAR_H - 30,
@@ -85,18 +194,19 @@ function reset() {
 }
 reset();
 
-function startGame() { reset(); scene = 'play'; }
+function startGame() { reset(); scene = 'play'; sfxStart(); }
 function toMenu() { scene = 'menu'; state.paused = false; }
 function gameOver() {
   lastRank = addScore(state.score, state.coinCount);
   scene = 'over';
+  sfxCrash();
 }
+const menuActions = [startGame, () => { scene = 'scores'; }, () => { scene = 'help'; }, () => { scene = 'name'; }];
+const menuLabels = ['▶  Chơi ngay', '🏆  Điểm cao', '❓  Hướng dẫn', '✏️  Đổi tên'];
 
-const menuActions = [startGame, () => { scene = 'scores'; }, () => { scene = 'help'; }];
-const menuLabels = ['▶  Chơi ngay', '🏆  Điểm cao', '❓  Hướng dẫn'];
-
-// ---------- Sinh vật thể ----------
-// kind: car = vẽ xe; còn lại vẽ emoji. v = tốc độ tự chạy về phía trước (0 = đứng yên)
+// =====================================================================
+//  CHƯỚNG NGẠI VẬT
+// =====================================================================
 const OBSTACLES = [
   { kind: 'car', w: CAR_W, h: CAR_H, pad: 6, weight: 5 },
   { kind: 'car', w: CAR_W, h: CAR_H, pad: 6, weight: 3 },
@@ -104,9 +214,9 @@ const OBSTACLES = [
   { kind: 'emoji', e: '🐕', w: 44, h: 32, size: 40, pad: 3, weight: 2, walk: 100 },
   { kind: 'emoji', e: '🐈', w: 34, h: 30, size: 34, pad: 3, weight: 2, walk: 85 },
   { kind: 'emoji', e: '🐄', w: 50, h: 40, size: 46, pad: 4, weight: 1, walk: 35 },
-  { kind: 'emoji', e: '🚧', w: 42, h: 36, size: 40, pad: 3, weight: 2, v: 0 },
-  { kind: 'emoji', e: '🛢️', w: 32, h: 40, size: 38, pad: 3, weight: 1, v: 0 },
-  { kind: 'emoji', e: '🪨', w: 38, h: 32, size: 36, pad: 3, weight: 1, v: 0 },
+  { kind: 'emoji', e: '🚧', w: 42, h: 36, size: 40, pad: 3, weight: 2 },
+  { kind: 'emoji', e: '🛢️', w: 32, h: 40, size: 38, pad: 3, weight: 1 },
+  { kind: 'emoji', e: '🪨', w: 38, h: 32, size: 36, pad: 3, weight: 1 },
 ];
 const TOTAL_W = OBSTACLES.reduce((a, o) => a + o.weight, 0);
 function pickObstacle() {
@@ -133,7 +243,9 @@ function spawnCoin() {
   state.coins.push({ x: ROAD_X + lane * LANE_W + LANE_W / 2, y: -20 });
 }
 
-// ---------- Vẽ ----------
+// =====================================================================
+//  VẼ
+// =====================================================================
 function drawCar(x, y, color, player) {
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x + 3, y + 4, CAR_W, CAR_H);
   ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x, y, CAR_W, CAR_H, 8); ctx.fill();
@@ -150,14 +262,9 @@ function drawObstacle(e) {
   if (e.kind === 'car') { drawCar(e.x, e.y, e.color, false); return; }
   const cx = e.x + e.w / 2;
   const cy = e.y + e.h / 2 + (e.vx ? Math.sin(performance.now() / 110 + e.ph) * 2 : 0);
-  const r = Math.max(e.w, e.h) * 0.95;
-  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, r);        // vầng sáng nền
-  g.addColorStop(0, 'rgba(255,255,190,0.9)'); g.addColorStop(1, 'rgba(255,255,190,0)');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
   ctx.save();
   ctx.translate(cx, cy);
-  if (e.vx > 0) ctx.scale(-1, 1);                                  // quay đầu theo hướng chạy
-  ctx.shadowColor = '#fff'; ctx.shadowBlur = 12;
+  if (e.vx > 0) ctx.scale(-1, 1);
   ctx.font = e.size + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(e.e, 0, 0);
   ctx.restore();
@@ -177,6 +284,11 @@ function text(t, x, y, size, color, align) {
   ctx.fillStyle = color || '#fff'; ctx.textAlign = align || 'center';
   ctx.fillText(t, x, y);
 }
+function fitText(t, maxW, size, color, y) {
+  ctx.font = 'bold ' + size + 'px sans-serif';
+  while (size > 16 && ctx.measureText(t).width > maxW) { size -= 2; ctx.font = 'bold ' + size + 'px sans-serif'; }
+  text(t, 0, y, size, color);
+}
 function overlay(a) { ctx.fillStyle = 'rgba(0,0,0,' + a + ')'; ctx.fillRect(0, 0, W, H); }
 function button(label, x, y, w, h, action, selected, idx) {
   buttons.push({ x, y, w, h, action, idx });
@@ -185,7 +297,6 @@ function button(label, x, y, w, h, action, selected, idx) {
   ctx.strokeStyle = selected ? '#fff' : 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2; ctx.stroke();
   text(label, x + w / 2, y + h / 2 + 7, 19, '#fff');
 }
-
 function drawHUD() {
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, 34);
   text('Điểm: ' + state.score, 10, 23, 16, '#fff', 'left');
@@ -198,12 +309,20 @@ function drawScene() {
   buttons = [];
   drawRoad();
 
+  if (scene === 'name') {
+    overlay(0.78);
+    text('🏎️ ĐUA XE', W / 2, 120, 40);
+    text('Nhập tên của bạn để vào game', W / 2, 185, 16, '#ddd');
+    if (nameErr > 0) text('⚠ Bạn chưa nhập tên!', W / 2, 410, 17, '#ff5252');
+    return;
+  }
+
   if (scene === 'menu') {
     overlay(0.55);
-    text('🏎️ ĐUA XE', W / 2, 130, 40);
-    text('Điểm cao nhất: ' + bestScore(), W / 2, 170, 16, '#8f8');
-    text(username ? '👤 ' + username : '👆 Nhập tên ở ô phía trên', W / 2, 200, 15, username ? '#fff' : '#ffd54f');
-    menuLabels.forEach((l, i) => button(l, 100, 230 + i * 65, 200, 48, menuActions[i], i === menuSel, i));
+    text('🏎️ ĐUA XE', W / 2, 115, 40);
+    text('Điểm cao nhất: ' + bestScore(), W / 2, 155, 16, '#8f8');
+    text('👤 ' + getName(), W / 2, 183, 15, '#fff');
+    menuLabels.forEach((l, i) => button(l, 100, 210 + i * 62, 200, 48, menuActions[i], i === menuSel, i));
     text('↑ ↓ chọn • Enter xác nhận', W / 2, H - 25, 13, '#aaa');
     return;
   }
@@ -229,8 +348,9 @@ function drawScene() {
     overlay(0.75);
     text('❓ HƯỚNG DẪN', W / 2, 80, 28);
     const lines = ['← → hoặc A D : đổi sang làn kế bên', 'P hoặc Esc : tạm dừng', 'Nhặt xu 🪙 : +5 điểm',
-                   'Tránh xe, người, chó mèo, chướng ngại', 'Xe càng chạy càng nhanh', 'Điện thoại: dùng 2 nút bên dưới'];
-    lines.forEach((l, i) => text(l, W / 2, 150 + i * 42, 17, '#eee'));
+                   'Tránh xe, người, chó mèo, chướng ngại', 'Xe càng chạy càng nhanh', 'Nút 🔊 : bật/tắt âm thanh',
+                   'Điện thoại: dùng 2 nút bên dưới'];
+    lines.forEach((l, i) => text(l, W / 2, 145 + i * 40, 17, '#eee'));
     button('⬅ Quay lại', 100, H - 80, 200, 46, toMenu, true);
     return;
   }
@@ -250,16 +370,26 @@ function drawScene() {
   drawHUD();
 
   if (scene === 'over') {
-    overlay(0.7);
-    text('💥 GAME OVER', W / 2, 160, 38, '#ff5252');
-    text(getName() + ' gà quá! 🐔', W / 2, 210, 24, '#ffd54f');
-    text('Điểm: ' + state.score, W / 2, 252, 24);
-    if (lastRank === 0) text('🏆 KỶ LỤC MỚI!', W / 2, 290, 20, '#ffd700');
-    else if (lastRank > 0) text('Xếp hạng #' + (lastRank + 1) + ' trong top 10', W / 2, 290, 17, '#8f8');
-    else text('Kỷ lục hiện tại: ' + bestScore(), W / 2, 290, 16, '#aaa');
-    button('🔄 Chơi lại', 100, 330, 200, 48, startGame, true);
-    button('🏠 Menu', 100, 395, 200, 48, toMenu, false);
-    text('Enter: chơi lại • Esc: menu', W / 2, H - 25, 13, '#aaa');
+    overlay(0.72);
+    text('💥 GAME OVER', W / 2, 92, 28, '#ff5252');
+    // bảng lớn "username gà quá"
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.beginPath(); ctx.roundRect(25, 115, 350, 185, 16); ctx.fill();
+    ctx.strokeStyle = '#ffd54f'; ctx.lineWidth = 3; ctx.stroke();
+    const pulse = 1 + 0.04 * Math.sin(performance.now() / 140);
+    ctx.save();
+    ctx.translate(W / 2, 208);
+    ctx.scale(pulse, pulse);
+    fitText(getName(), 320, 56, '#ffd54f', -10);
+    text('gà quá! 🐔', 0, 55, 46, '#ff5252');
+    ctx.restore();
+    text('Điểm: ' + state.score, W / 2, 345, 24);
+    if (lastRank === 0) text('🏆 KỶ LỤC MỚI!', W / 2, 378, 20, '#ffd700');
+    else if (lastRank > 0) text('Xếp hạng #' + (lastRank + 1) + ' trong top 10', W / 2, 378, 17, '#8f8');
+    else text('Kỷ lục hiện tại: ' + bestScore(), W / 2, 378, 16, '#aaa');
+    button('🔄 Chơi lại', 100, 405, 200, 48, startGame, true);
+    button('🏠 Menu', 100, 465, 200, 48, toMenu, false);
+    text('Enter: chơi lại • Esc: menu', W / 2, H - 20, 13, '#aaa');
   } else if (state.paused) {
     overlay(0.6);
     text('⏸ TẠM DỪNG', W / 2, 220, 34);
@@ -268,7 +398,9 @@ function drawScene() {
   }
 }
 
-// ---------- Cập nhật ----------
+// =====================================================================
+//  CẬP NHẬT
+// =====================================================================
 function hit(a, b) {
   const p = b.pad;
   return a.x + 6 < b.x + b.w - p && a.x + CAR_W - 6 > b.x + p &&
@@ -285,7 +417,6 @@ function update(dt) {
   s.speed = Math.min(MAX_SPEED, s.speed + dt * ACCEL);
   s.dist += s.speed * dt;
   s.roadOffset += s.speed * dt;
-  s.score = Math.floor(s.dist / SCORE_DIV) + s.coinCount * COIN_BONUS;
 
   s.spawnTimer -= dt;
   if (s.spawnTimer <= 0) { spawnEnemy(); s.spawnTimer = Math.max(0.3, 1.1 - s.speed / 1400) * (0.6 + Math.random() * 0.8); }
@@ -294,7 +425,7 @@ function update(dt) {
 
   for (const e of s.enemies) {
     e.y += (s.speed - e.v) * dt;
-    if (e.vx) {                                   // người/thú chạy ngang qua đường
+    if (e.vx) {
       e.x += e.vx * dt;
       const minX = ROAD_X + 2, maxX = ROAD_X + ROAD_W - e.w - 2;
       if (e.x < minX) { e.x = minX; e.vx = Math.abs(e.vx); }
@@ -306,7 +437,9 @@ function update(dt) {
   s.coins = s.coins.filter(c => c.y < H + 30);
 
   s.coins = s.coins.filter(c => {
-    if (Math.abs(c.x - (s.x + CAR_W / 2)) < 26 && Math.abs(c.y - (s.y + CAR_H / 2)) < 45) { s.coinCount++; return false; }
+    if (Math.abs(c.x - (s.x + CAR_W / 2)) < 26 && Math.abs(c.y - (s.y + CAR_H / 2)) < 45) {
+      s.coinCount++; sfxCoin(); return false;
+    }
     return true;
   });
   s.score = Math.floor(s.dist / SCORE_DIV) + s.coinCount * COIN_BONUS;
@@ -317,24 +450,35 @@ function loop(t) {
   const dt = Math.min(0.05, (t - lastT) / 1000 || 0);
   lastT = t;
   update(dt);
+  if (nameErr > 0) nameErr -= dt;
+  if (scene !== prevScene) {
+    nameBox.style.display = scene === 'name' ? 'block' : 'none';
+    if (scene === 'name') { nameInput.value = username; setTimeout(() => { nameInput.focus(); nameInput.select(); }, 30); }
+    prevScene = scene;
+  }
+  audioTick();
   drawScene();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
-// ---------- Điều khiển ----------
+// =====================================================================
+//  ĐIỀU KHIỂN
+// =====================================================================
 window.addEventListener('keydown', e => {
-  if (document.activeElement === nameInput) {         // đang gõ tên: không điều khiển game
-    if (e.key === 'Enter' || e.key === 'Escape') { nameInput.blur(); canvas.focus(); }
+  const k = e.key;
+  if (document.activeElement === nameInput) {
+    if (k === 'Enter') submitName();
+    else if (k === 'Escape' && username) { nameInput.blur(); canvas.focus(); scene = 'menu'; }
     return;
   }
-  const k = e.key;
-  keys[k] = true;
   if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(k)) e.preventDefault();
 
-  if (scene === 'menu') {
-    if (k === 'ArrowUp' || k === 'w' || k === 'W') menuSel = (menuSel + 2) % 3;
-    else if (k === 'ArrowDown' || k === 's' || k === 'S') menuSel = (menuSel + 1) % 3;
+  if (scene === 'name') {
+    nameInput.focus();
+  } else if (scene === 'menu') {
+    if (k === 'ArrowUp' || k === 'w' || k === 'W') menuSel = (menuSel + 3) % 4;
+    else if (k === 'ArrowDown' || k === 's' || k === 'S') menuSel = (menuSel + 1) % 4;
     else if (k === 'Enter' || k === ' ') menuActions[menuSel]();
   } else if (scene === 'play') {
     if (k === 'p' || k === 'P' || k === 'Escape') state.paused = !state.paused;
@@ -346,7 +490,6 @@ window.addEventListener('keydown', e => {
     else if (k === 'Escape' || k === 'm' || k === 'M') toMenu();
   } else if (k === 'Escape' || k === 'Enter' || k === ' ') toMenu();
 });
-window.addEventListener('keyup', e => { keys[e.key] = false; });
 
 function canvasPos(e) {
   const r = canvas.getBoundingClientRect();
@@ -356,6 +499,7 @@ function buttonAt(p) {
   return buttons.find(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
 }
 canvas.addEventListener('click', e => {
+  if (scene === 'name') { nameInput.focus(); return; }
   canvas.focus();
   const b = buttonAt(canvasPos(e));
   if (b) b.action();
@@ -368,13 +512,12 @@ canvas.addEventListener('mousemove', e => {
 
 function bindBtn(id, d) {
   const b = document.getElementById(id);
-  const go = e => { e.preventDefault(); moveLane(d); };
+  const go = e => { e.preventDefault(); initAudio(); moveLane(d); };
   b.addEventListener('mousedown', go);
   b.addEventListener('touchstart', go);
 }
 bindBtn('btnL', -1); bindBtn('btnR', 1);
-canvas.focus();
 </script>
 """
 
-components.html(GAME_HTML, height=790, scrolling=False)
+components.html(GAME_HTML, height=740, scrolling=False)
