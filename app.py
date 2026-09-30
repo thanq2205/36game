@@ -1,8 +1,8 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Chạy trốn chó dữ", page_icon="🏃", layout="wide")
-st.markdown("<h3 style='text-align:center'>🌾🏃💨🐕 Chạy trốn chó dữ: làng quê</h3>", unsafe_allow_html=True)
+st.set_page_config(page_title="CHÓ DÍ", page_icon="🏃", layout="wide")
+st.markdown("<h3 style='text-align:center'>Chó dí</h3>", unsafe_allow_html=True)
 
 GAME_HTML = r"""
 <style>
