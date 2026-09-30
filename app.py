@@ -3,7 +3,7 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Đua Xe", page_icon="🏎️", layout="centered")
 
-st.title("🏎️ Lái Xe")
+st.title("🏎️ Đua Xe")
 
 GAME_HTML = """
 <div style="display:flex;flex-direction:column;align-items:center;font-family:sans-serif;">
@@ -30,12 +30,13 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
 
-const ROAD_X = 40, ROAD_W = 320, LANES = 4, LANE_W = ROAD_W / LANES;
+const ROAD_X = 70, ROAD_W = 260, LANES = 4, LANE_W = ROAD_W / LANES;
 const CAR_W = 40, CAR_H = 70;
 const START_SPEED = 240, ACCEL = 16, MAX_SPEED = 1100;
 const SCORE_DIV = 150, COIN_BONUS = 5;
 const LANE_TIME = 0.22;
 const easeInOut = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const rnd = Math.random;
 const COLORS = ['#e74c3c','#3498db','#f1c40f','#9b59b6','#1abc9c','#e67e22'];
 
 // =====================================================================
@@ -86,11 +87,19 @@ function sfxCoin() {
   if (!AC) return; const t = AC.currentTime;
   toneAt(988, 0.09, 'square', 0.25, t, sfxGain); toneAt(1319, 0.18, 'square', 0.25, t + 0.08, sfxGain);
 }
-function sfxCrash() {
+function sfxCrash(living) {
   if (!AC) return; const t = AC.currentTime;
-  noiseAt(0.8, 1.0, 3000, 80, 'lowpass', t, sfxGain);
-  toneAt(140, 0.5, 'sawtooth', 0.8, t, sfxGain, 35);
-  [392, 330, 262, 196].forEach((f, i) => toneAt(f, 0.28, 'triangle', 0.35, t + 0.55 + i * 0.27, sfxGain));
+  if (living) {                                   // tiếng "bịch" + máu văng
+    noiseAt(0.3, 0.9, 1200, 120, 'lowpass', t, sfxGain);
+    toneAt(95, 0.3, 'sine', 1.0, t, sfxGain, 38);
+    noiseAt(0.25, 0.5, 3500, 600, 'bandpass', t + 0.05, sfxGain);
+    toneAt(180, 0.18, 'sawtooth', 0.4, t + 0.02, sfxGain, 70);
+  } else {                                        // nổ
+    noiseAt(1.1, 1.0, 3000, 60, 'lowpass', t, sfxGain);
+    toneAt(140, 0.7, 'sawtooth', 0.9, t, sfxGain, 30);
+    toneAt(60, 0.9, 'sine', 1.0, t, sfxGain, 25);
+  }
+  [392, 330, 262, 196].forEach((f, k) => toneAt(f, 0.28, 'triangle', 0.35, t + 1.0 + k * 0.27, sfxGain));
 }
 function sfxStart() {
   if (!AC) return; const t = AC.currentTime;
@@ -102,7 +111,7 @@ const CHORDS = [[57, 60, 64], [53, 57, 60], [55, 60, 64], [55, 59, 62]];
 const BASS = [45, 41, 48, 43], ARP = [0, 1, 2, 1, 0, 1, 2, 1];
 let nextT = 0, stepI = 0, stepD = 0.115;
 
-function musicShouldPlay() { return scene !== 'over' && !(scene === 'play' && state.paused); }
+function musicShouldPlay() { return scene !== 'over' && scene !== 'crash' && !(scene === 'play' && state.paused); }
 function playStep(i, t) {
   const ci = Math.floor(i / 8) % 4, chord = CHORDS[ci], st = i % 8;
   if (st % 2 === 0) toneAt(m2f(BASS[ci] + (st % 4 === 2 ? 12 : 0)), stepD * 1.8, 'triangle', 0.6, t, musicGain);
@@ -189,17 +198,25 @@ function reset() {
   state = {
     paused: false, lane: 1, x: laneX(1), fromX: laneX(1), toX: laneX(1), t: 1, y: H - CAR_H - 30,
     speed: START_SPEED, dist: 0, score: 0, enemies: [], coins: [],
-    spawnTimer: 0, coinTimer: 0, coinCount: 0, roadOffset: state ? state.roadOffset : 0
+    spawnTimer: 0, coinTimer: 0, coinCount: 0, roadOffset: state ? state.roadOffset : 0,
+    fx: null, scenery: makeScenery(), sceneryAcc: 0
   };
 }
 reset();
 
 function startGame() { reset(); scene = 'play'; sfxStart(); }
 function toMenu() { scene = 'menu'; state.paused = false; }
-function gameOver() {
+function gameOver(e) {
   lastRank = addScore(state.score, state.coinCount);
-  scene = 'over';
-  sfxCrash();
+  const living = e.kind === 'emoji' && !!e.walk;          // người / động vật
+  const px = state.x + CAR_W / 2, py = state.y + CAR_H / 2;
+  const ex = e.x + e.w / 2, ey = e.y + e.h / 2;
+  state.fx = makeFx(living ? 'blood' : 'boom', (px + ex) / 2, (py + ey) / 2);
+  if (e.kind === 'car') { e.wreck = true; e.rot = (Math.random() - 0.5) * 0.9; }
+  else e.dead = true;
+  state.fx.spin = living ? 0 : (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.35);
+  scene = 'crash';
+  sfxCrash(living);
 }
 const menuActions = [startGame, () => { scene = 'scores'; }, () => { scene = 'help'; }, () => { scene = 'name'; }];
 const menuLabels = ['▶  Chơi ngay', '🏆  Điểm cao', '❓  Hướng dẫn', '✏️  Đổi tên'];
@@ -244,6 +261,136 @@ function spawnCoin() {
 }
 
 // =====================================================================
+//  HIỆU ỨNG VA CHẠM + CÂY CỎ
+// =====================================================================
+function makeFx(kind, x, y) {
+  const fx = { kind, x, y, t: 0, parts: [], stains: [], spin: 0 };
+  if (kind === 'boom') {
+    fx.stains.push({ x, y, r: 34, c: 'rgba(0,0,0,0.45)' });
+    for (let i = 0; i < 45; i++) {
+      const a = rnd() * 6.283, sp = 40 + rnd() * 260, l = 0.35 + rnd() * 0.7;
+      fx.parts.push({ t: 'fire', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: l, max: l, size: 6 + rnd() * 12 });
+    }
+    for (let i = 0; i < 22; i++) {
+      const l = 1.2 + rnd() * 1.8;
+      fx.parts.push({ t: 'smoke', x: x + (rnd() - 0.5) * 20, y, vx: (rnd() - 0.5) * 40, vy: -20 - rnd() * 50, life: l, max: l, size: 10 + rnd() * 14 });
+    }
+    for (let i = 0; i < 16; i++) {
+      const a = rnd() * 6.283, sp = 80 + rnd() * 240, l = 0.8 + rnd() * 0.8;
+      fx.parts.push({ t: 'debris', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 80, g: 500, life: l, max: l, rot: 0, vr: (rnd() - 0.5) * 20 });
+    }
+  } else {
+    for (let i = 0; i < 55; i++) {
+      const a = rnd() * 6.283, sp = 60 + rnd() * 300, l = 0.5 + rnd() * 0.7;
+      fx.parts.push({ t: 'blood', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 420, life: l, max: l, size: 2 + rnd() * 4 });
+    }
+    fx.stains.push({ x, y, r: 20 });
+    for (let i = 0; i < 9; i++) fx.stains.push({ x: x + (rnd() - 0.5) * 70, y: y + (rnd() - 0.5) * 60, r: 5 + rnd() * 16 });
+  }
+  return fx;
+}
+function updateFx(dt) {
+  const fx = state.fx; if (!fx) return;
+  fx.t += dt;
+  if (fx.kind === 'boom') {
+    if (fx.t < 2.6 && rnd() < dt * 35)
+      fx.parts.push({ t: 'smoke', x: fx.x + (rnd() - 0.5) * 26, y: fx.y + (rnd() - 0.5) * 20, vx: (rnd() - 0.5) * 25, vy: -30 - rnd() * 40, life: 1.5, max: 1.5, size: 9 + rnd() * 10 });
+    if (fx.t < 1.6 && rnd() < dt * 30)
+      fx.parts.push({ t: 'fire', x: fx.x + (rnd() - 0.5) * 24, y: fx.y + (rnd() - 0.5) * 18, vx: (rnd() - 0.5) * 30, vy: -40 - rnd() * 40, life: 0.5, max: 0.5, size: 6 + rnd() * 6 });
+  }
+  for (const p of fx.parts) {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.g) p.vy += p.g * dt;
+    if (p.rot !== undefined) p.rot += p.vr * dt;
+    p.life -= dt;
+    if (p.life <= 0 && p.t === 'blood' && fx.stains.length < 160) fx.stains.push({ x: p.x, y: p.y, r: 1.5 + rnd() * 3 });
+  }
+  fx.parts = fx.parts.filter(p => p.life > 0);
+}
+function circ(x, y, r, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+function ell(x, y, rx, ry, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, 7); ctx.fill(); }
+function tri(ax, ay, bx, by, cx, cy, col) {
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(cx, cy); ctx.closePath(); ctx.fill();
+}
+function drawStains() {
+  const fx = state.fx; if (!fx) return;
+  for (const st of fx.stains) circ(st.x, st.y, st.r, st.c || 'rgba(140,0,0,0.9)');
+}
+function drawFxParticles() {
+  const fx = state.fx; if (!fx) return;
+  if (fx.kind === 'boom' && fx.t < 0.45) {
+    const k = fx.t / 0.45;
+    circ(fx.x, fx.y, 30 + k * 50, 'rgba(255,240,200,' + (0.9 * (1 - k)) + ')');
+    ctx.strokeStyle = 'rgba(255,200,100,' + (1 - k) + ')'; ctx.lineWidth = 6 * (1 - k) + 1;
+    ctx.beginPath(); ctx.arc(fx.x, fx.y, 20 + k * 140, 0, 7); ctx.stroke();
+  }
+  for (const p of fx.parts) {
+    const a = Math.max(0, p.life / p.max);
+    if (p.t === 'fire') {
+      const col = a > 0.6 ? 'rgba(255,240,120,' : a > 0.3 ? 'rgba(255,140,30,' : 'rgba(200,40,20,';
+      circ(p.x, p.y, p.size * (0.4 + a * 0.8), col + a + ')');
+    } else if (p.t === 'smoke') {
+      circ(p.x, p.y, p.size * (1.6 - a), 'rgba(70,70,70,' + (a * 0.6) + ')');
+    } else if (p.t === 'debris') {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = '#222'; ctx.fillRect(-3, -2, 6, 4); ctx.restore();
+    } else {
+      circ(p.x, p.y, p.size, 'rgba(190,20,20,' + Math.min(1, a * 1.5) + ')');
+    }
+  }
+  if (fx.kind === 'blood' && fx.t < 0.35) {
+    ctx.fillStyle = 'rgba(180,0,0,' + (0.35 * (1 - fx.t / 0.35)) + ')'; ctx.fillRect(0, 0, W, H);
+  }
+}
+function drawWreck(x, y, rot, color, player) {
+  ctx.save();
+  ctx.translate(x + CAR_W / 2, y + CAR_H / 2); ctx.rotate(rot);
+  drawCar(-CAR_W / 2, -CAR_H / 2, color, player);
+  ctx.fillStyle = 'rgba(15,15,15,0.62)'; ctx.beginPath(); ctx.roundRect(-CAR_W / 2, -CAR_H / 2, CAR_W, CAR_H, 8); ctx.fill();
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.moveTo(-14, -30); ctx.lineTo(-4, -14); ctx.lineTo(-12, -2); ctx.lineTo(2, 12);
+  ctx.moveTo(12, -20); ctx.lineTo(4, -6); ctx.lineTo(14, 8); ctx.stroke();
+  ctx.restore();
+}
+
+// cây cỏ hai bên đường
+function addScen(list, y) {
+  [-1, 1].forEach(side => {
+    if (rnd() > 0.85) return;
+    const r = rnd(), t = r < 0.35 ? 'tree' : r < 0.55 ? 'pine' : r < 0.8 ? 'bush' : 'flower';
+    const sz = (t === 'tree' || t === 'pine') ? 15 + rnd() * 7 : t === 'bush' ? 9 + rnd() * 5 : 3 + rnd() * 2;
+    const lo = sz + 2, hi = Math.max(lo, ROAD_X - sz - 6);
+    const cx = lo + rnd() * (hi - lo);
+    list.push({ x: side < 0 ? cx : W - cx, y: y + rnd() * 10, t, s: sz, c: ['#ffffff', '#ffeb3b', '#f48fb1', '#ff8a65'][Math.floor(rnd() * 4)] });
+  });
+}
+function makeScenery() { const a = []; for (let y = -40; y < H + 60; y += 46) addScen(a, y); return a; }
+function moveScenery(d) {
+  const s = state;
+  for (const o of s.scenery) o.y += d;
+  s.scenery = s.scenery.filter(o => o.y < H + 70);
+  s.sceneryAcc += d;
+  while (s.sceneryAcc >= 46) { s.sceneryAcc -= 46; addScen(s.scenery, -50 + s.sceneryAcc); }
+}
+function drawScenery() {
+  for (const o of state.scenery) {
+    const x = o.x, y = o.y, s = o.s;
+    if (o.t === 'tree') {
+      ell(x + 3, y + s * 0.75, s * 0.9, s * 0.35, 'rgba(0,0,0,0.25)');
+      ctx.fillStyle = '#5d4037'; ctx.fillRect(x - 3, y - 2, 6, s * 0.8);
+      circ(x, y - s * 0.35, s, '#2e7d32'); circ(x - s * 0.3, y - s * 0.5, s * 0.6, '#43a047'); circ(x + s * 0.3, y - s * 0.6, s * 0.35, '#66bb6a');
+    } else if (o.t === 'pine') {
+      ctx.fillStyle = '#5d4037'; ctx.fillRect(x - 2, y + s * 0.4, 4, s * 0.5);
+      tri(x, y - s * 1.1, x - s * 0.8, y - s * 0.1, x + s * 0.8, y - s * 0.1, '#1b5e20');
+      tri(x, y - s * 0.6, x - s * 0.95, y + s * 0.5, x + s * 0.95, y + s * 0.5, '#2e7d32');
+    } else if (o.t === 'bush') {
+      ell(x, y, s * 1.1, s * 0.75, '#388e3c'); ell(x - s * 0.3, y - s * 0.2, s * 0.6, s * 0.45, '#66bb6a');
+    } else {
+      circ(x - 4, y, s * 0.7, o.c); circ(x + 4, y + 2, s * 0.7, o.c); circ(x, y - 4, s * 0.7, o.c); circ(x, y, s * 0.5, '#fdd835');
+    }
+  }
+}
+
+// =====================================================================
 //  VẼ
 // =====================================================================
 function drawCar(x, y, color, player) {
@@ -259,7 +406,12 @@ function drawCar(x, y, color, player) {
   }
 }
 function drawObstacle(e) {
-  if (e.kind === 'car') { drawCar(e.x, e.y, e.color, false); return; }
+  if (e.dead) return;
+  if (e.kind === 'car') {
+    if (e.wreck) drawWreck(e.x, e.y, e.rot * Math.min(1, state.fx.t * 3), e.color, false);
+    else drawCar(e.x, e.y, e.color, false);
+    return;
+  }
   const cx = e.x + e.w / 2;
   const cy = e.y + e.h / 2 + (e.vx ? Math.sin(performance.now() / 110 + e.ph) * 2 : 0);
   ctx.save();
@@ -272,12 +424,17 @@ function drawObstacle(e) {
 }
 function drawRoad() {
   ctx.fillStyle = '#2e7d32'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#388e3c';
+  for (let y = -80 + (state.roadOffset % 80); y < H; y += 80) {
+    ctx.fillRect(0, y, ROAD_X, 40); ctx.fillRect(ROAD_X + ROAD_W, y, W - ROAD_X - ROAD_W, 40);
+  }
   ctx.fillStyle = '#3a3a3a'; ctx.fillRect(ROAD_X, 0, ROAD_W, H);
   ctx.fillStyle = '#fff'; ctx.fillRect(ROAD_X - 4, 0, 4, H); ctx.fillRect(ROAD_X + ROAD_W, 0, 4, H);
   ctx.fillStyle = '#ddd';
   for (let l = 1; l < LANES; l++)
     for (let y = -40 + (state.roadOffset % 40); y < H; y += 40)
       ctx.fillRect(ROAD_X + l * LANE_W - 2, y, 4, 20);
+  drawScenery();
 }
 function text(t, x, y, size, color, align) {
   ctx.font = 'bold ' + size + 'px sans-serif';
@@ -306,6 +463,14 @@ function drawHUD() {
 }
 
 function drawScene() {
+  const fx = state.fx;
+  if (scene === 'crash' && fx) {
+    const m = 12 * Math.max(0, 1 - fx.t / 0.6);
+    ctx.save(); ctx.translate((rnd() - 0.5) * m, (rnd() - 0.5) * m);
+    drawSceneInner(); ctx.restore();
+  } else drawSceneInner();
+}
+function drawSceneInner() {
   buttons = [];
   drawRoad();
 
@@ -355,22 +520,33 @@ function drawScene() {
     return;
   }
 
-  // play / over
+  // play / crash / over
+  drawStains();
   for (const c of state.coins) {
     ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(c.x, c.y, 10, 0, 7); ctx.fill();
     ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2; ctx.stroke();
   }
   for (const e of state.enemies) drawObstacle(e);
-  const tilt = (state.toX - state.x) / LANE_W * 0.35;
-  ctx.save();
-  ctx.translate(state.x + CAR_W / 2, state.y + CAR_H / 2);
-  ctx.rotate(tilt);
-  drawCar(-CAR_W / 2, -CAR_H / 2, '#d32f2f', true);
-  ctx.restore();
+  const fx = state.fx;
+  if (fx && fx.kind === 'boom') {
+    drawWreck(state.x, state.y, fx.spin * Math.min(1, fx.t * 3), '#d32f2f', true);
+  } else {
+    const tilt = (state.toX - state.x) / LANE_W * 0.35;
+    ctx.save();
+    ctx.translate(state.x + CAR_W / 2, state.y + CAR_H / 2);
+    ctx.rotate(tilt);
+    drawCar(-CAR_W / 2, -CAR_H / 2, '#d32f2f', true);
+    if (fx) {                                            // máu bắn lên đầu xe
+      circ(-8, -CAR_H / 2 + 6, 5, '#b71c1c'); circ(9, -CAR_H / 2 + 12, 4, '#c62828');
+      circ(0, -CAR_H / 2 + 20, 6, '#8e0000'); circ(-12, -CAR_H / 2 + 24, 3, '#b71c1c');
+    }
+    ctx.restore();
+  }
+  drawFxParticles();
   drawHUD();
 
   if (scene === 'over') {
-    overlay(0.72);
+    overlay(0.6);
     text('💥 GAME OVER', W / 2, 92, 28, '#ff5252');
     // bảng lớn "username gà quá"
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -408,7 +584,12 @@ function hit(a, b) {
 }
 function update(dt) {
   const s = state;
-  if (scene !== 'play') { s.roadOffset += 120 * dt; return; }
+  if (scene === 'crash' || scene === 'over') {
+    updateFx(dt);
+    if (scene === 'crash' && s.fx && s.fx.t > 1.6) scene = 'over';
+    return;
+  }
+  if (scene !== 'play') { s.roadOffset += 120 * dt; moveScenery(120 * dt); return; }
   if (s.paused) return;
 
   s.t = Math.min(1, s.t + dt / LANE_TIME);
@@ -417,6 +598,7 @@ function update(dt) {
   s.speed = Math.min(MAX_SPEED, s.speed + dt * ACCEL);
   s.dist += s.speed * dt;
   s.roadOffset += s.speed * dt;
+  moveScenery(s.speed * dt);
 
   s.spawnTimer -= dt;
   if (s.spawnTimer <= 0) { spawnEnemy(); s.spawnTimer = Math.max(0.3, 1.1 - s.speed / 1400) * (0.6 + Math.random() * 0.8); }
@@ -443,7 +625,7 @@ function update(dt) {
     return true;
   });
   s.score = Math.floor(s.dist / SCORE_DIV) + s.coinCount * COIN_BONUS;
-  for (const e of s.enemies) if (hit({ x: s.x, y: s.y }, e)) { gameOver(); break; }
+  for (const e of s.enemies) if (hit({ x: s.x, y: s.y }, e)) { gameOver(e); break; }
 }
 
 function loop(t) {
@@ -488,6 +670,8 @@ window.addEventListener('keydown', e => {
   } else if (scene === 'over') {
     if (k === 'Enter' || k === ' ') startGame();
     else if (k === 'Escape' || k === 'm' || k === 'M') toMenu();
+  } else if (scene === 'crash') {
+    if (k === 'Enter' || k === ' ') scene = 'over';
   } else if (k === 'Escape' || k === 'Enter' || k === ' ') toMenu();
 });
 
