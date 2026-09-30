@@ -1,183 +1,224 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Retro Neon Racing 2D", layout="centered")
+st.set_page_config(page_title="Game Đua Xe 2D", page_icon="🏎️", layout="centered")
 
-st.title("⚡ Đua Xe Cổ Điển: Neon Horizon")
-st.write("Sử dụng phím **Mũi tên Trái (⬅️) / Phải (➡️)** hoặc chạm màn hình để đánh lái né xe cảnh sát!")
+st.title("🏎️ Game Đua Xe 2D")
+st.caption("Click vào khung game để bắt đầu • ← → hoặc A D để lái • Space/Enter để chơi lại • P để tạm dừng")
 
-# Đoạn mã xử lý game engine 2D Canvas mượt mà, đồ họa Neon cực chất
-game_html = """
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body { margin: 0; background-color: #0b0b1e; display: flex; justify-content: center; align-items: center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        canvas { border: 4px solid #00f3ff; border-radius: 12px; box-shadow: 0 0 20px #00f3ff; background: #12122c; max-width: 100%; }
-        #game-container { position: relative; text-align: center; }
-        .score-board { position: absolute; top: 15px; left: 15px; color: #fff; font-size: 20px; font-weight: bold; text-shadow: 0 0 8px #00f3ff; font-family: monospace; background: rgba(0,0,0,0.4); padding: 5px 10px; border-radius: 5px; }
-    </style>
-</head>
-<body>
-    <div id="game-container">
-        <div class="score-board">SCORE: <span id="scoreVal">0</span></div>
-        <canvas id="gameCanvas" width="400" height="550"></canvas>
-    </div>
+GAME_HTML = """
+<div style="display:flex;flex-direction:column;align-items:center;font-family:sans-serif;">
+  <canvas id="game" width="400" height="600" tabindex="0"
+    style="background:#222;border:3px solid #444;border-radius:8px;max-width:100%;outline:none;touch-action:none;"></canvas>
+  <div style="margin-top:10px;display:flex;gap:12px;">
+    <button id="btnL" style="font-size:24px;padding:10px 30px;border-radius:8px;">⬅️</button>
+    <button id="btnR" style="font-size:24px;padding:10px 30px;border-radius:8px;">➡️</button>
+  </div>
+</div>
 
-    <script>
-        const canvas = document.getElementById("gameCanvas");
-        const ctx = canvas.getContext("2d");
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
 
-        // Cấu hình vật thể
-        let player = { x: 175, y: 450, w: 50, h: 80, speed: 6 };
-        let obstacles = [];
-        let score = 0;
-        let gameSpeed = 5;
-        let gameOver = false;
-        let trackOffset = 0;
+const ROAD_X = 40, ROAD_W = 320, LANES = 4, LANE_W = ROAD_W / LANES;
+const CAR_W = 40, CAR_H = 70;
 
-        // Trạng thái phím bấm
-        let keys = { ArrowLeft: false, ArrowRight: false };
+let state, keys = {}, lastT = 0, best = 0;
+try { best = parseInt(localStorage.getItem('racing_best') || '0'); } catch(e) {}
 
-        window.addEventListener("keydown", e => { if(e.key in keys) keys[e.key] = true; });
-        window.addEventListener("keyup", e => { if(e.key in keys) keys[e.key] = false; });
+function reset() {
+  state = {
+    running: false, over: false, paused: false,
+    x: ROAD_X + ROAD_W / 2 - CAR_W / 2, y: H - CAR_H - 30,
+    vx: 0, speed: 260, dist: 0, score: 0,
+    enemies: [], spawnTimer: 0, roadOffset: 0, coins: [], coinTimer: 0, coinCount: 0
+  };
+}
+reset();
 
-        // Hỗ trợ chơi trên điện thoại (Chạm nửa màn hình trái/phải để rẽ)
-        canvas.addEventListener("touchstart", e => {
-            let touchX = e.touches[0].clientX - canvas.getBoundingClientRect().left;
-            if(touchX < canvas.width / 2) keys.ArrowLeft = true;
-            else keys.ArrowRight = true;
-        });
-        canvas.addEventListener("touchend", () => { keys.ArrowLeft = false; keys.ArrowRight = false; });
+const COLORS = ['#e74c3c','#3498db','#f1c40f','#9b59b6','#1abc9c','#e67e22'];
 
-        function spawnObstacle() {
-            if (gameOver) return;
-            // Chia làm 3 làn đường chính
-            const lanes =;
-            const randomLane = lanes[Math.floor(Math.random() * lanes.length)];
-            
-            // Không sinh xe quá sát nhau ở cùng một làn
-            if(obstacles.length === 0 || obstacles[obstacles.length - 1].y > 200) {
-                obstacles.push({ x: randomLane, y: -100, w: 50, h: 80, color: "#ff0055" });
-            }
-            setTimeout(spawnObstacle, Math.max(1000, 2000 - score * 5));
-        }
+function spawnEnemy() {
+  // không chặn hết làn: chỉ spawn 1 xe mỗi lần, tránh chồng lên xe khác
+  const lane = Math.floor(Math.random() * LANES);
+  const x = ROAD_X + lane * LANE_W + (LANE_W - CAR_W) / 2;
+  if (state.enemies.some(e => Math.abs(e.x - x) < 5 && e.y < 120)) return;
+  state.enemies.push({
+    x, y: -CAR_H - 10, color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    v: 60 + Math.random() * 80
+  });
+}
 
-        function checkCollision(rect1, rect2) {
-            return rect1.x < rect2.x + rect2.w &&
-                   rect1.x + rect1.w > rect2.x &&
-                   rect1.y < rect2.y + rect2.h &&
-                   rect1.y + rect1.h > rect2.y;
-        }
+function spawnCoin() {
+  const lane = Math.floor(Math.random() * LANES);
+  const x = ROAD_X + lane * LANE_W + LANE_W / 2;
+  if (state.enemies.some(e => Math.abs(e.x + CAR_W/2 - x) < 30 && e.y < 100)) return;
+  state.coins.push({ x, y: -20 });
+}
 
-        function update() {
-            if (gameOver) return;
+function drawCar(x, y, color, player) {
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(x + 3, y + 4, CAR_W, CAR_H);
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.roundRect(x, y, CAR_W, CAR_H, 8); ctx.fill();
+  ctx.fillStyle = '#111';                      // bánh xe
+  ctx.fillRect(x - 4, y + 10, 5, 16); ctx.fillRect(x + CAR_W - 1, y + 10, 5, 16);
+  ctx.fillRect(x - 4, y + CAR_H - 26, 5, 16); ctx.fillRect(x + CAR_W - 1, y + CAR_H - 26, 5, 16);
+  ctx.fillStyle = 'rgba(180,220,255,0.9)';      // kính
+  ctx.fillRect(x + 6, y + (player ? 16 : 30), CAR_W - 12, 16);
+  if (player) {
+    ctx.fillStyle = '#fff';                     // sọc đua
+    ctx.fillRect(x + CAR_W/2 - 3, y, 6, CAR_H);
+    ctx.fillStyle = '#ffe9a0';
+    ctx.fillRect(x + 4, y + 2, 8, 4); ctx.fillRect(x + CAR_W - 12, y + 2, 8, 4);
+  }
+}
 
-            // Xử lý di chuyển mượt mà của người chơi
-            if (keys.ArrowLeft && player.x > 30) player.x -= player.speed;
-            if (keys.ArrowRight && player.x < canvas.width - 30 - player.w) player.x += player.speed;
+function drawRoad() {
+  ctx.fillStyle = '#2e7d32'; ctx.fillRect(0, 0, W, H);            // cỏ
+  ctx.fillStyle = '#3a3a3a'; ctx.fillRect(ROAD_X, 0, ROAD_W, H);  // đường
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(ROAD_X - 4, 0, 4, H); ctx.fillRect(ROAD_X + ROAD_W, 0, 4, H);
+  ctx.fillStyle = '#ddd';
+  for (let l = 1; l < LANES; l++) {
+    for (let y = -40 + (state.roadOffset % 40); y < H; y += 40) {
+      ctx.fillRect(ROAD_X + l * LANE_W - 2, y, 4, 20);
+    }
+  }
+}
 
-            // Cuộn hiệu ứng đường đua động
-            trackOffset += gameSpeed;
-            if (trackOffset >= 40) trackOffset = 0;
+function hit(a, b) {
+  const p = 6; // nới lỏng va chạm
+  return a.x + p < b.x + CAR_W - p && a.x + CAR_W - p > b.x + p &&
+         a.y + p < b.y + CAR_H - p && a.y + CAR_H - p > b.y + p;
+}
 
-            // Di chuyển và xử lý chướng ngại vật
-            for (let i = obstacles.length - 1; i >= 0; i--) {
-                let obs = obstacles[i];
-                obs.y += gameSpeed;
+function update(dt) {
+  const s = state;
+  if (!s.running || s.over || s.paused) return;
 
-                // Kiểm tra va chạm pixel
-                if (checkCollision(player, obs)) {
-                    gameOver = true;
-                    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    ctx.fillStyle = "#ff0055";
-                    ctx.font = "bold 35px sans-serif";
-                    ctx.textAlign = "center";
-                    ctx.fillText("💥 TAI NẠN RỒI!", canvas.width/2, canvas.height/2 - 20);
-                    ctx.fillStyle = "#fff";
-                    ctx.font = "18px sans-serif";
-                    ctx.fillText("Chạm màn hình hoặc F5 để chơi lại", canvas.width/2, canvas.height/2 + 30);
-                    
-                    canvas.addEventListener("click", () => location.reload(), {once: true});
-                    return;
-                }
+  const left = keys['ArrowLeft'] || keys['a'] || keys['A'] || keys.__L;
+  const right = keys['ArrowRight'] || keys['d'] || keys['D'] || keys.__R;
+  const target = (right ? 1 : 0) - (left ? 1 : 0);
+  s.vx += (target * 320 - s.vx) * Math.min(1, dt * 10);
+  s.x += s.vx * dt;
+  s.x = Math.max(ROAD_X + 2, Math.min(ROAD_X + ROAD_W - CAR_W - 2, s.x));
 
-                // Đi qua an toàn
-                if (obs.y > canvas.height) {
-                    obstacles.splice(i, 1);
-                    score += 10;
-                    document.getElementById("scoreVal").innerText = score;
-                    if(score % 50 === 0) gameSpeed += 0.5; // Tăng dần độ khó tốc độ
-                }
-            }
-        }
+  s.speed = Math.min(650, s.speed + dt * 6);
+  s.dist += s.speed * dt;
+  s.roadOffset += s.speed * dt;
+  s.score = Math.floor(s.dist / 10) + s.coinCount * 50;
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+  s.spawnTimer -= dt;
+  if (s.spawnTimer <= 0) {
+    spawnEnemy();
+    s.spawnTimer = Math.max(0.35, 1.1 - s.speed / 900) * (0.6 + Math.random() * 0.8);
+  }
+  s.coinTimer -= dt;
+  if (s.coinTimer <= 0) { spawnCoin(); s.coinTimer = 1.5 + Math.random() * 2; }
 
-            // 1. Vẽ lề đường Neon uốn lượn
-            ctx.strokeStyle = "#00f3ff";
-            ctx.lineWidth = 6;
-            ctx.beginPath();
-            ctx.moveTo(25, 0); ctx.lineTo(25, canvas.height);
-            ctx.moveTo(canvas.width - 25, 0); ctx.lineTo(canvas.width - 25, canvas.height);
-            ctx.stroke();
+  for (const e of s.enemies) e.y += (s.speed - e.v) * dt;
+  for (const c of s.coins) c.y += s.speed * dt;
+  s.enemies = s.enemies.filter(e => e.y < H + 100);
+  s.coins = s.coins.filter(c => c.y < H + 30);
 
-            // 2. Vẽ vạch kẻ phân làn chuyển động động
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-            ctx.lineWidth = 4;
-            ctx.setLineDash([25, 15]);
-            
-            ctx.beginPath();
-            ctx.moveTo(135, trackOffset - 40); ctx.lineTo(135, canvas.height + 40);
-            ctx.moveTo(265, trackOffset - 40); ctx.lineTo(265, canvas.height + 40);
-            ctx.stroke();
-            ctx.setLineDash([]); // Reset line dash
+  const me = { x: s.x, y: s.y };
+  for (const e of s.enemies) {
+    if (hit(me, e)) {
+      s.over = true;
+      if (s.score > best) {
+        best = s.score;
+        try { localStorage.setItem('racing_best', String(best)); } catch(err) {}
+      }
+    }
+  }
+  s.coins = s.coins.filter(c => {
+    if (Math.abs(c.x - (s.x + CAR_W/2)) < 26 && Math.abs(c.y - (s.y + CAR_H/2)) < 45) {
+      s.coinCount++; return false;
+    }
+    return true;
+  });
+}
 
-            // 3. Vẽ chiếc xe của người chơi (Thiết kế phong cách Cyberpunk Cybercar)
-            ctx.fillStyle = "#00ff66"; // Thân xe màu xanh neon phát sáng
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = "#00ff66";
-            ctx.fillRect(player.x, player.y, player.w, player.h);
-            
-            // Kính chắn gió và đèn xe
-            ctx.fillStyle = "#111";
-            ctx.fillRect(player.x + 5, player.y + 20, player.w - 10, 20);
-            ctx.fillStyle = "#fff";
-            ctx.fillRect(player.x + 5, player.y + 5, 10, 5);
-            ctx.fillRect(player.x + player.w - 15, player.y + 5, 10, 5);
+function text(t, x, y, size, color, align) {
+  ctx.font = 'bold ' + size + 'px sans-serif';
+  ctx.fillStyle = color || '#fff';
+  ctx.textAlign = align || 'center';
+  ctx.fillText(t, x, y);
+}
 
-            // 4. Vẽ các xe đối thủ cản đường
-            obstacles.forEach(obs => {
-                ctx.fillStyle = obs.color;
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = obs.color;
-                ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
-                
-                // Chi tiết xe đối thủ
-                ctx.fillStyle = "#111";
-                ctx.fillRect(obs.x + 5, obs.y + 40, obs.w - 10, 20);
-                ctx.fillStyle = "#ffea00";
-                ctx.fillRect(obs.x + 5, obs.y + 70, 10, 5);
-                ctx.fillRect(obs.x + obs.w - 15, obs.y + 70, 10, 5);
-            });
-            
-            ctx.shadowBlur = 0; // Reset hiệu ứng phát sáng cho khung hình sau
-        }
+function draw() {
+  drawRoad();
+  for (const c of state.coins) {
+    ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(c.x, c.y, 10, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  for (const e of state.enemies) drawCar(e.x, e.y, e.color, false);
+  drawCar(state.x, state.y, '#d32f2f', true);
 
-        function gameLoop() {
-            update();
-            draw();
-            if (!gameOver) requestAnimationFrame(gameLoop);
-        }
+  // HUD
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, 34);
+  text('Điểm: ' + state.score, 10, 23, 16, '#fff', 'left');
+  text('🪙 ' + state.coinCount, W/2, 23, 16, '#ffd700');
+  text('Kỷ lục: ' + best, W - 10, 23, 16, '#8f8', 'right');
+  text(Math.round(state.speed / 3) + ' km/h', W - 10, H - 12, 14, '#fff', 'right');
 
-        spawnObstacle();
-        gameLoop();
-    </script>
-</body>
-</html>
+  if (!state.running) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
+    text('🏎️ ĐUA XE 2D', W/2, 240, 36);
+    text('Nhấn Space / Enter hoặc click để bắt đầu', W/2, 290, 15, '#ddd');
+    text('← → hoặc A D để lái • Nhặt xu 🪙 • Tránh xe', W/2, 320, 14, '#aaa');
+  } else if (state.over) {
+    ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, W, H);
+    text('💥 GAME OVER', W/2, 250, 38, '#ff5252');
+    text('Điểm: ' + state.score, W/2, 295, 22);
+    text('Nhấn Space / Enter để chơi lại', W/2, 335, 15, '#ddd');
+  } else if (state.paused) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
+    text('⏸ TẠM DỪNG', W/2, 300, 32);
+  }
+}
+
+function loop(t) {
+  const dt = Math.min(0.05, (t - lastT) / 1000 || 0);
+  lastT = t;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function startOrRestart() {
+  if (!state.running || state.over) { reset(); state.running = true; }
+}
+
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
+  if (e.key === ' ' || e.key === 'Enter') startOrRestart();
+  if (e.key === 'p' || e.key === 'P') { if (state.running && !state.over) state.paused = !state.paused; }
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+canvas.addEventListener('click', () => { canvas.focus(); startOrRestart(); });
+
+// Nút cảm ứng cho điện thoại
+function bindBtn(id, key) {
+  const b = document.getElementById(id);
+  const on = e => { e.preventDefault(); keys[key] = true; if (!state.running || state.over) startOrRestart(); };
+  const off = e => { e.preventDefault(); keys[key] = false; };
+  b.addEventListener('mousedown', on); b.addEventListener('touchstart', on);
+  b.addEventListener('mouseup', off); b.addEventListener('mouseleave', off);
+  b.addEventListener('touchend', off);
+}
+bindBtn('btnL', '__L'); bindBtn('btnR', '__R');
+canvas.focus();
+</script>
 """
 
-# Nhúng thẳng khung game mượt này vào giao diện Streamlit
-components.html(game_html, height=600, scrolling=False)
+components.html(GAME_HTML, height=720, scrolling=False)
+
+st.markdown(
+    "**Mẹo:** Xe càng chạy càng nhanh. Nhặt xu 🪙 được +50 điểm. "
+    "Kỷ lục được lưu trong trình duyệt của bạn."
+)
