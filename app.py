@@ -1,9 +1,9 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Game Đua Xe 2D", page_icon="🏎️", layout="centered")
+st.set_page_config(page_title="Đua Xe", page_icon="🏎️", layout="centered")
 
-st.title("🏎️ Game Đua Xe 2D")
+st.title("🏎️ Đua Xe")
 
 GAME_HTML = """
 <div style="display:flex;flex-direction:column;align-items:center;font-family:sans-serif;">
@@ -50,10 +50,16 @@ let scene = 'menu';                        // menu | play | over | scores | help
 let menuSel = 0, keys = {}, lastT = 0, buttons = [];
 let state, lastRank = -1;
 
+const laneX = l => ROAD_X + l * LANE_W + (LANE_W - CAR_W) / 2;
+function moveLane(d) {
+  if (scene !== 'play' || state.paused) return;
+  state.lane = Math.max(0, Math.min(LANES - 1, state.lane + d));
+}
+
 function reset() {
   state = {
-    paused: false, x: ROAD_X + ROAD_W / 2 - CAR_W / 2, y: H - CAR_H - 30,
-    vx: 0, speed: 260, dist: 0, score: 0, enemies: [], coins: [],
+    paused: false, lane: 1, x: laneX(1), y: H - CAR_H - 30,
+    speed: 260, dist: 0, score: 0, enemies: [], coins: [],
     spawnTimer: 0, coinTimer: 0, coinCount: 0, roadOffset: state ? state.roadOffset : 0
   };
 }
@@ -133,7 +139,7 @@ function drawScene() {
 
   if (scene === 'menu') {
     overlay(0.55);
-    text('🏎️ ĐUA XE 2D', W / 2, 130, 40);
+    text('🏎️ ĐUA XE', W / 2, 130, 40);
     text('Điểm cao nhất: ' + bestScore(), W / 2, 170, 16, '#8f8');
     menuLabels.forEach((l, i) => button(l, 100, 230 + i * 65, 200, 48, menuActions[i], i === menuSel, i));
     text('↑ ↓ chọn • Enter xác nhận', W / 2, H - 25, 13, '#aaa');
@@ -160,7 +166,7 @@ function drawScene() {
   if (scene === 'help') {
     overlay(0.75);
     text('❓ HƯỚNG DẪN', W / 2, 80, 28);
-    const lines = ['← → hoặc A D : lái xe', 'P hoặc Esc : tạm dừng', 'Nhặt xu 🪙 : +50 điểm',
+    const lines = ['← → hoặc A D : đổi sang làn kế bên', 'P hoặc Esc : tạm dừng', 'Nhặt xu 🪙 : +50 điểm',
                    'Tránh va chạm với xe khác', 'Xe càng chạy càng nhanh', 'Điện thoại: dùng 2 nút bên dưới'];
     lines.forEach((l, i) => text(l, W / 2, 150 + i * 42, 17, '#eee'));
     button('⬅ Quay lại', 100, H - 80, 200, 46, toMenu, true);
@@ -205,12 +211,7 @@ function update(dt) {
   if (scene !== 'play') { s.roadOffset += 120 * dt; return; }
   if (s.paused) return;
 
-  const left = keys['ArrowLeft'] || keys['a'] || keys['A'] || keys.__L;
-  const right = keys['ArrowRight'] || keys['d'] || keys['D'] || keys.__R;
-  const target = (right ? 1 : 0) - (left ? 1 : 0);
-  s.vx += (target * 320 - s.vx) * Math.min(1, dt * 10);
-  s.x += s.vx * dt;
-  s.x = Math.max(ROAD_X + 2, Math.min(ROAD_X + ROAD_W - CAR_W - 2, s.x));
+  s.x += (laneX(s.lane) - s.x) * Math.min(1, dt * 16);   // trượt mượt sang làn mục tiêu
 
   s.speed = Math.min(650, s.speed + dt * 6);
   s.dist += s.speed * dt;
@@ -256,6 +257,8 @@ window.addEventListener('keydown', e => {
     else if (k === 'Enter' || k === ' ') menuActions[menuSel]();
   } else if (scene === 'play') {
     if (k === 'p' || k === 'P' || k === 'Escape') state.paused = !state.paused;
+    else if (!e.repeat && (k === 'ArrowLeft' || k === 'a' || k === 'A')) moveLane(-1);
+    else if (!e.repeat && (k === 'ArrowRight' || k === 'd' || k === 'D')) moveLane(1);
     else if (state.paused && (k === 'm' || k === 'M')) toMenu();
   } else if (scene === 'over') {
     if (k === 'Enter' || k === ' ') startGame();
@@ -282,14 +285,13 @@ canvas.addEventListener('mousemove', e => {
   if (b && b.idx !== undefined) menuSel = b.idx;
 });
 
-function bindBtn(id, key) {
+function bindBtn(id, d) {
   const b = document.getElementById(id);
-  const on = e => { e.preventDefault(); keys[key] = true; };
-  const off = e => { e.preventDefault(); keys[key] = false; };
-  b.addEventListener('mousedown', on); b.addEventListener('touchstart', on);
-  b.addEventListener('mouseup', off); b.addEventListener('mouseleave', off); b.addEventListener('touchend', off);
+  const go = e => { e.preventDefault(); moveLane(d); };
+  b.addEventListener('mousedown', go);
+  b.addEventListener('touchstart', go);
 }
-bindBtn('btnL', '__L'); bindBtn('btnR', '__R');
+bindBtn('btnL', -1); bindBtn('btnR', 1);
 canvas.focus();
 </script>
 """
