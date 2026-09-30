@@ -1,100 +1,183 @@
 import streamlit as st
-import random
-import time
+import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Game Đua Xe 2D Arcade", layout="centered")
+st.set_page_config(page_title="Retro Neon Racing 2D", layout="centered")
 
-st.title("🏎️ Game Đua Xe 2D Cổ Điển")
-st.write("Dùng các nút bấm trên màn hình hoặc phím **A (Sang trái) / D (Sang phải)** trên bàn phím để né chướng ngại vật!")
+st.title("⚡ Đua Xe Cổ Điển: Neon Horizon")
+st.write("Sử dụng phím **Mũi tên Trái (⬅️) / Phải (➡️)** hoặc chạm màn hình để đánh lái né xe cảnh sát!")
 
-# 1. Khởi tạo trạng thái game (Session State)
-ROAD_WIDTH = 5
-ROAD_HEIGHT = 8
+# Đoạn mã xử lý game engine 2D Canvas mượt mà, đồ họa Neon cực chất
+game_html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { margin: 0; background-color: #0b0b1e; display: flex; justify-content: center; align-items: center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        canvas { border: 4px solid #00f3ff; border-radius: 12px; box-shadow: 0 0 20px #00f3ff; background: #12122c; max-width: 100%; }
+        #game-container { position: relative; text-align: center; }
+        .score-board { position: absolute; top: 15px; left: 15px; color: #fff; font-size: 20px; font-weight: bold; text-shadow: 0 0 8px #00f3ff; font-family: monospace; background: rgba(0,0,0,0.4); padding: 5px 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div class="score-board">SCORE: <span id="scoreVal">0</span></div>
+        <canvas id="gameCanvas" width="400" height="550"></canvas>
+    </div>
 
-if "car_pos" not in st.session_state:
-    st.session_state.car_pos = 2  # Vị trí xe người chơi (nằm giữa từ 0 đến 4)
-    st.session_state.obstacles = []  # Danh sách chướng ngại vật [(x, y)]
-    st.session_state.score = 0
-    st.session_state.game_over = False
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
 
-# 2. Xử lý Logic Game khi người chơi bấm nút hành động
-def game_tick(move_dir=None):
-    if st.session_state.game_over:
-        return
+        // Cấu hình vật thể
+        let player = { x: 175, y: 450, w: 50, h: 80, speed: 6 };
+        let obstacles = [];
+        let score = 0;
+        let gameSpeed = 5;
+        let gameOver = false;
+        let trackOffset = 0;
 
-    # Xử lý di chuyển xe của người chơi
-    if move_dir == "LEFT" and st.session_state.car_pos > 0:
-        st.session_state.car_pos -= 1
-    elif move_dir == "RIGHT" and st.session_state.car_pos < ROAD_WIDTH - 1:
-        st.session_state.car_pos += 1
+        // Trạng thái phím bấm
+        let keys = { ArrowLeft: false, ArrowRight: false };
 
-    # Di chuyển các chướng ngại vật hiện tại xuống 1 bước
-    updated_obstacles = []
-    for (obs_x, obs_y) in st.session_state.obstacles:
-        new_y = obs_y + 1
-        # Nếu chưa trôi ra khỏi màn hình thì giữ lại
-        if new_y < ROAD_HEIGHT:
-            updated_obstacles.append((obs_x, new_y))
-        else:
-            st.session_state.score += 10  # Né thành công cộng 10 điểm
+        window.addEventListener("keydown", e => { if(e.key in keys) keys[e.key] = true; });
+        window.addEventListener("keyup", e => { if(e.key in keys) keys[e.key] = false; });
 
-    # Ngẫu nhiên sinh ra chướng ngại vật mới ở hàng trên cùng (y=0)
-    if random.random() < 0.4 or len(updated_obstacles) == 0:
-        new_x = random.randint(0, ROAD_WIDTH - 1)
-        # Tránh sinh vật thể trùng nhau ở hàng trên cùng
-        if not any(obs[1] == 0 for obs in updated_obstacles):
-            updated_obstacles.append((new_x, 0))
+        // Hỗ trợ chơi trên điện thoại (Chạm nửa màn hình trái/phải để rẽ)
+        canvas.addEventListener("touchstart", e => {
+            let touchX = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+            if(touchX < canvas.width / 2) keys.ArrowLeft = true;
+            else keys.ArrowRight = true;
+        });
+        canvas.addEventListener("touchend", () => { keys.ArrowLeft = false; keys.ArrowRight = false; });
 
-    st.session_state.obstacles = updated_obstacles
-
-    # Kiểm tra va chạm (Nếu vị trí xe trùng với bất kỳ vật cản nào ở hàng cuối cùng)
-    for (obs_x, obs_y) in st.session_state.obstacles:
-        if obs_y == ROAD_HEIGHT - 1 and obs_x == st.session_state.car_pos:
-            st.session_state.game_over = True
-
-# 3. Giao diện hiển thị điểm số và nút bấm điều khiển
-col_info, col_reset = st.columns([2, 1])
-with col_info:
-    st.subheader(f"🏆 Điểm số: {st.session_state.score}")
-with col_reset:
-    if st.button("🔄 Chơi lại", use_container_width=True):
-        st.session_state.car_pos = 2
-        st.session_state.obstacles = []
-        st.session_state.score = 0
-        st.session_state.game_over = False
-        st.rerun()
-
-if st.session_state.game_over:
-    st.error("💥 BÙM! Bạn đã đâm sầm vào chướng ngại vật. Hãy bấm 'Chơi lại' để phục thù!")
-
-# Cụm điều khiển đánh lái trái/phải
-c1, c2, c3 = st.columns([1, 2, 1])
-with c1:
-    if st.button("⬅️ Trái", on_click=game_tick, args=("LEFT",), use_container_width=True):
-        pass
-with c2:
-    # Nút bấm tiến lên để chạy tiếp (khi không cần rẽ)
-    if st.button("🚀 Lao lên phía trước", on_click=game_tick, use_container_width=True):
-        pass
-with c3:
-    if st.button("Phải ➡️", on_click=game_tick, args=("RIGHT",), use_container_width=True):
-        pass
-
-# 4. Dựng đồ họa lưới đường đua 2D bằng HTML/CSS
-grid_html = "<div style='display: grid; grid-template-columns: repeat(" + str(ROAD_WIDTH) + ", 1fr); gap: 4px; max-width: 320px; margin: 10px auto; background-color: #333; padding: 10px; border-left: 5px dashed white; border-right: 5px dashed white;'>"
-
-for y in range(ROAD_HEIGHT):
-    for x in range(ROAD_WIDTH):
-        # Xác định vật thể tại ô (x, y) này là gì
-        if y == ROAD_HEIGHT - 1 and x == st.session_state.car_pos:
-            color = "#ff4d4d; border-radius: 4px; box-shadow: 0 0 8px #ff4d4d;"  # Xe người chơi (Màu Đỏ)
-        elif (x, y) in st.session_state.obstacles:
-            color = "#f1c40f; border-radius: 4px;"  # Chướng ngại vật / Xe cản đường (Màu Vàng)
-        else:
-            color = "#222;"  # Mặt đường trống (Màu Tối)
+        function spawnObstacle() {
+            if (gameOver) return;
+            // Chia làm 3 làn đường chính
+            const lanes =;
+            const randomLane = lanes[Math.floor(Math.random() * lanes.length)];
             
-        grid_html += f"<div style='aspect-ratio: 1; background-color: {color}; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px;'>{'🏎️' if (y == ROAD_HEIGHT - 1 and x == st.session_state.car_pos) else ('🚧' if (x, y) in st.session_state.obstacles else '')}</div>"
+            // Không sinh xe quá sát nhau ở cùng một làn
+            if(obstacles.length === 0 || obstacles[obstacles.length - 1].y > 200) {
+                obstacles.push({ x: randomLane, y: -100, w: 50, h: 80, color: "#ff0055" });
+            }
+            setTimeout(spawnObstacle, Math.max(1000, 2000 - score * 5));
+        }
 
-grid_html += "</div>"
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.w &&
+                   rect1.x + rect1.w > rect2.x &&
+                   rect1.y < rect2.y + rect2.h &&
+                   rect1.y + rect1.h > rect2.y;
+        }
 
-st.markdown(grid_html, unsafe_allow_html=True)
+        function update() {
+            if (gameOver) return;
+
+            // Xử lý di chuyển mượt mà của người chơi
+            if (keys.ArrowLeft && player.x > 30) player.x -= player.speed;
+            if (keys.ArrowRight && player.x < canvas.width - 30 - player.w) player.x += player.speed;
+
+            // Cuộn hiệu ứng đường đua động
+            trackOffset += gameSpeed;
+            if (trackOffset >= 40) trackOffset = 0;
+
+            // Di chuyển và xử lý chướng ngại vật
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.y += gameSpeed;
+
+                // Kiểm tra va chạm pixel
+                if (checkCollision(player, obs)) {
+                    gameOver = true;
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = "#ff0055";
+                    ctx.font = "bold 35px sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.fillText("💥 TAI NẠN RỒI!", canvas.width/2, canvas.height/2 - 20);
+                    ctx.fillStyle = "#fff";
+                    ctx.font = "18px sans-serif";
+                    ctx.fillText("Chạm màn hình hoặc F5 để chơi lại", canvas.width/2, canvas.height/2 + 30);
+                    
+                    canvas.addEventListener("click", () => location.reload(), {once: true});
+                    return;
+                }
+
+                // Đi qua an toàn
+                if (obs.y > canvas.height) {
+                    obstacles.splice(i, 1);
+                    score += 10;
+                    document.getElementById("scoreVal").innerText = score;
+                    if(score % 50 === 0) gameSpeed += 0.5; // Tăng dần độ khó tốc độ
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Vẽ lề đường Neon uốn lượn
+            ctx.strokeStyle = "#00f3ff";
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(25, 0); ctx.lineTo(25, canvas.height);
+            ctx.moveTo(canvas.width - 25, 0); ctx.lineTo(canvas.width - 25, canvas.height);
+            ctx.stroke();
+
+            // 2. Vẽ vạch kẻ phân làn chuyển động động
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+            ctx.lineWidth = 4;
+            ctx.setLineDash([25, 15]);
+            
+            ctx.beginPath();
+            ctx.moveTo(135, trackOffset - 40); ctx.lineTo(135, canvas.height + 40);
+            ctx.moveTo(265, trackOffset - 40); ctx.lineTo(265, canvas.height + 40);
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset line dash
+
+            // 3. Vẽ chiếc xe của người chơi (Thiết kế phong cách Cyberpunk Cybercar)
+            ctx.fillStyle = "#00ff66"; // Thân xe màu xanh neon phát sáng
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = "#00ff66";
+            ctx.fillRect(player.x, player.y, player.w, player.h);
+            
+            // Kính chắn gió và đèn xe
+            ctx.fillStyle = "#111";
+            ctx.fillRect(player.x + 5, player.y + 20, player.w - 10, 20);
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(player.x + 5, player.y + 5, 10, 5);
+            ctx.fillRect(player.x + player.w - 15, player.y + 5, 10, 5);
+
+            // 4. Vẽ các xe đối thủ cản đường
+            obstacles.forEach(obs => {
+                ctx.fillStyle = obs.color;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = obs.color;
+                ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                
+                // Chi tiết xe đối thủ
+                ctx.fillStyle = "#111";
+                ctx.fillRect(obs.x + 5, obs.y + 40, obs.w - 10, 20);
+                ctx.fillStyle = "#ffea00";
+                ctx.fillRect(obs.x + 5, obs.y + 70, 10, 5);
+                ctx.fillRect(obs.x + obs.w - 15, obs.y + 70, 10, 5);
+            });
+            
+            ctx.shadowBlur = 0; // Reset hiệu ứng phát sáng cho khung hình sau
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            if (!gameOver) requestAnimationFrame(gameLoop);
+        }
+
+        spawnObstacle();
+        gameLoop();
+    </script>
+</body>
+</html>
+"""
+
+# Nhúng thẳng khung game mượt này vào giao diện Streamlit
+components.html(game_html, height=600, scrolling=False)
