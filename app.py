@@ -22,6 +22,10 @@ const W = canvas.width, H = canvas.height;
 
 const ROAD_X = 40, ROAD_W = 320, LANES = 4, LANE_W = ROAD_W / LANES;
 const CAR_W = 40, CAR_H = 70;
+const START_SPEED = 240, ACCEL = 9, MAX_SPEED = 900;   // tốc độ tăng dần đều
+const SCORE_DIV = 60, COIN_BONUS = 10;                  // điểm tăng chậm
+const LANE_TIME = 0.22;                                 // giây để đổi 1 làn
+const easeInOut = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const COLORS = ['#e74c3c','#3498db','#f1c40f','#9b59b6','#1abc9c','#e67e22'];
 
 // ---------- Điểm cao (localStorage, có dự phòng bộ nhớ tạm) ----------
@@ -53,13 +57,16 @@ let state, lastRank = -1;
 const laneX = l => ROAD_X + l * LANE_W + (LANE_W - CAR_W) / 2;
 function moveLane(d) {
   if (scene !== 'play' || state.paused) return;
-  state.lane = Math.max(0, Math.min(LANES - 1, state.lane + d));
+  const nl = Math.max(0, Math.min(LANES - 1, state.lane + d));
+  if (nl === state.lane) return;
+  state.lane = nl;
+  state.fromX = state.x; state.toX = laneX(nl); state.t = 0;
 }
 
 function reset() {
   state = {
-    paused: false, lane: 1, x: laneX(1), y: H - CAR_H - 30,
-    speed: 260, dist: 0, score: 0, enemies: [], coins: [],
+    paused: false, lane: 1, x: laneX(1), fromX: laneX(1), toX: laneX(1), t: 1, y: H - CAR_H - 30,
+    speed: START_SPEED, dist: 0, score: 0, enemies: [], coins: [],
     spawnTimer: 0, coinTimer: 0, coinCount: 0, roadOffset: state ? state.roadOffset : 0
   };
 }
@@ -166,7 +173,7 @@ function drawScene() {
   if (scene === 'help') {
     overlay(0.75);
     text('❓ HƯỚNG DẪN', W / 2, 80, 28);
-    const lines = ['← → hoặc A D : đổi sang làn kế bên', 'P hoặc Esc : tạm dừng', 'Nhặt xu 🪙 : +50 điểm',
+    const lines = ['← → hoặc A D : đổi sang làn kế bên', 'P hoặc Esc : tạm dừng', 'Nhặt xu 🪙 : +10 điểm',
                    'Tránh va chạm với xe khác', 'Xe càng chạy càng nhanh', 'Điện thoại: dùng 2 nút bên dưới'];
     lines.forEach((l, i) => text(l, W / 2, 150 + i * 42, 17, '#eee'));
     button('⬅ Quay lại', 100, H - 80, 200, 46, toMenu, true);
@@ -179,7 +186,12 @@ function drawScene() {
     ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2; ctx.stroke();
   }
   for (const e of state.enemies) drawCar(e.x, e.y, e.color, false);
-  drawCar(state.x, state.y, '#d32f2f', true);
+  const tilt = (state.toX - state.x) / LANE_W * 0.35;
+  ctx.save();
+  ctx.translate(state.x + CAR_W / 2, state.y + CAR_H / 2);
+  ctx.rotate(tilt);
+  drawCar(-CAR_W / 2, -CAR_H / 2, '#d32f2f', true);
+  ctx.restore();
   drawHUD();
 
   if (scene === 'over') {
@@ -211,12 +223,13 @@ function update(dt) {
   if (scene !== 'play') { s.roadOffset += 120 * dt; return; }
   if (s.paused) return;
 
-  s.x += (laneX(s.lane) - s.x) * Math.min(1, dt * 16);   // trượt mượt sang làn mục tiêu
+  s.t = Math.min(1, s.t + dt / LANE_TIME);
+  s.x = s.fromX + (s.toX - s.fromX) * easeInOut(s.t);
 
-  s.speed = Math.min(650, s.speed + dt * 6);
+  s.speed = Math.min(MAX_SPEED, s.speed + dt * ACCEL);
   s.dist += s.speed * dt;
   s.roadOffset += s.speed * dt;
-  s.score = Math.floor(s.dist / 10) + s.coinCount * 50;
+  s.score = Math.floor(s.dist / SCORE_DIV) + s.coinCount * COIN_BONUS;
 
   s.spawnTimer -= dt;
   if (s.spawnTimer <= 0) { spawnEnemy(); s.spawnTimer = Math.max(0.35, 1.1 - s.speed / 900) * (0.6 + Math.random() * 0.8); }
@@ -232,7 +245,7 @@ function update(dt) {
     if (Math.abs(c.x - (s.x + CAR_W / 2)) < 26 && Math.abs(c.y - (s.y + CAR_H / 2)) < 45) { s.coinCount++; return false; }
     return true;
   });
-  s.score = Math.floor(s.dist / 10) + s.coinCount * 50;
+  s.score = Math.floor(s.dist / SCORE_DIV) + s.coinCount * COIN_BONUS;
   for (const e of s.enemies) if (hit({ x: s.x, y: s.y }, e)) { gameOver(); break; }
 }
 
