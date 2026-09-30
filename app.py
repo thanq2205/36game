@@ -7,6 +7,8 @@ st.title("🏎️ Đua Xe")
 
 GAME_HTML = """
 <div style="display:flex;flex-direction:column;align-items:center;font-family:sans-serif;">
+  <input id="uname" type="text" maxlength="14" placeholder="✏️ Nhập tên của bạn" autocomplete="off"
+    style="width:260px;max-width:90%;margin-bottom:10px;padding:9px 12px;font-size:16px;border-radius:8px;border:2px solid #666;text-align:center;">
   <canvas id="game" width="400" height="600" tabindex="0"
     style="background:#222;border:3px solid #444;border-radius:8px;max-width:100%;outline:none;touch-action:none;"></canvas>
   <div style="margin-top:10px;display:flex;gap:12px;">
@@ -39,8 +41,19 @@ function saveScores(list) {
   try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {}
 }
 let scores = loadScores();
+
+// ---------- Tên người chơi ----------
+const nameInput = document.getElementById('uname');
+let username = '';
+try { username = localStorage.getItem('racing_user') || ''; } catch (e) {}
+nameInput.value = username;
+nameInput.addEventListener('input', () => {
+  username = nameInput.value.trim().slice(0, 14);
+  try { localStorage.setItem('racing_user', username); } catch (e) {}
+});
+const getName = () => username || 'Bạn';
 function addScore(s, coins) {
-  const entry = { s, coins, d: new Date().toLocaleDateString('vi-VN') };
+  const entry = { s, coins, n: getName(), d: new Date().toLocaleDateString('vi-VN') };
   scores.push(entry);
   scores.sort((a, b) => b.s - a.s);
   scores = scores.slice(0, 10);
@@ -87,10 +100,10 @@ const menuLabels = ['▶  Chơi ngay', '🏆  Điểm cao', '❓  Hướng dẫn
 const OBSTACLES = [
   { kind: 'car', w: CAR_W, h: CAR_H, pad: 6, weight: 5 },
   { kind: 'car', w: CAR_W, h: CAR_H, pad: 6, weight: 3 },
-  { kind: 'emoji', e: '🚶', w: 28, h: 50, size: 46, pad: 3, weight: 2, v: 0 },
-  { kind: 'emoji', e: '🐕', w: 44, h: 32, size: 40, pad: 3, weight: 2, v: 0 },
-  { kind: 'emoji', e: '🐈', w: 34, h: 30, size: 34, pad: 3, weight: 2, v: 0 },
-  { kind: 'emoji', e: '🐄', w: 50, h: 40, size: 46, pad: 4, weight: 1, v: 0 },
+  { kind: 'emoji', e: '🚶', w: 28, h: 50, size: 46, pad: 3, weight: 2, walk: 55 },
+  { kind: 'emoji', e: '🐕', w: 44, h: 32, size: 40, pad: 3, weight: 2, walk: 100 },
+  { kind: 'emoji', e: '🐈', w: 34, h: 30, size: 34, pad: 3, weight: 2, walk: 85 },
+  { kind: 'emoji', e: '🐄', w: 50, h: 40, size: 46, pad: 4, weight: 1, walk: 35 },
   { kind: 'emoji', e: '🚧', w: 42, h: 36, size: 40, pad: 3, weight: 2, v: 0 },
   { kind: 'emoji', e: '🛢️', w: 32, h: 40, size: 38, pad: 3, weight: 1, v: 0 },
   { kind: 'emoji', e: '🪨', w: 38, h: 32, size: 36, pad: 3, weight: 1, v: 0 },
@@ -101,20 +114,22 @@ function pickObstacle() {
   for (const o of OBSTACLES) { if ((r -= o.weight) <= 0) return o; }
   return OBSTACLES[0];
 }
+const laneOf = e => Math.max(0, Math.min(LANES - 1, Math.floor((e.x + e.w / 2 - ROAD_X) / LANE_W)));
 function spawnEnemy() {
   const lane = Math.floor(Math.random() * LANES);
-  if (state.enemies.some(e => e.lane === lane && e.y < 140)) return;
+  if (state.enemies.some(e => laneOf(e) === lane && e.y < 140)) return;
   const o = pickObstacle();
   const cx = ROAD_X + lane * LANE_W + LANE_W / 2;
   state.enemies.push({
-    ...o, lane, x: cx - o.w / 2, y: -o.h - 10,
+    ...o, x: cx - o.w / 2, y: -o.h - 10, ph: Math.random() * 6,
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
-    v: o.kind === 'car' ? 60 + Math.random() * 80 : 0
+    v: o.kind === 'car' ? 60 + Math.random() * 80 : 0,
+    vx: o.walk ? (Math.random() < 0.5 ? -1 : 1) * o.walk * (0.75 + Math.random() * 0.5) : 0
   });
 }
 function spawnCoin() {
   const lane = Math.floor(Math.random() * LANES);
-  if (state.enemies.some(e => e.lane === lane && e.y < 110)) return;
+  if (state.enemies.some(e => laneOf(e) === lane && e.y < 110)) return;
   state.coins.push({ x: ROAD_X + lane * LANE_W + LANE_W / 2, y: -20 });
 }
 
@@ -133,10 +148,19 @@ function drawCar(x, y, color, player) {
 }
 function drawObstacle(e) {
   if (e.kind === 'car') { drawCar(e.x, e.y, e.color, false); return; }
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  ctx.beginPath(); ctx.ellipse(e.x + e.w / 2, e.y + e.h - 2, e.w / 2, 5, 0, 0, 7); ctx.fill();
+  const cx = e.x + e.w / 2;
+  const cy = e.y + e.h / 2 + (e.vx ? Math.sin(performance.now() / 110 + e.ph) * 2 : 0);
+  const r = Math.max(e.w, e.h) * 0.95;
+  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, r);        // vầng sáng nền
+  g.addColorStop(0, 'rgba(255,255,190,0.9)'); g.addColorStop(1, 'rgba(255,255,190,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (e.vx > 0) ctx.scale(-1, 1);                                  // quay đầu theo hướng chạy
+  ctx.shadowColor = '#fff'; ctx.shadowBlur = 12;
   ctx.font = e.size + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(e.e, e.x + e.w / 2, e.y + e.h / 2);
+  ctx.fillText(e.e, 0, 0);
+  ctx.restore();
   ctx.textBaseline = 'alphabetic';
 }
 function drawRoad() {
@@ -178,6 +202,7 @@ function drawScene() {
     overlay(0.55);
     text('🏎️ ĐUA XE', W / 2, 130, 40);
     text('Điểm cao nhất: ' + bestScore(), W / 2, 170, 16, '#8f8');
+    text(username ? '👤 ' + username : '👆 Nhập tên ở ô phía trên', W / 2, 200, 15, username ? '#fff' : '#ffd54f');
     menuLabels.forEach((l, i) => button(l, 100, 230 + i * 65, 200, 48, menuActions[i], i === menuSel, i));
     text('↑ ↓ chọn • Enter xác nhận', W / 2, H - 25, 13, '#aaa');
     return;
@@ -190,10 +215,10 @@ function drawScene() {
     scores.forEach((r, i) => {
       const y = 115 + i * 34;
       const medal = ['🥇', '🥈', '🥉'][i] || (i + 1) + '.';
-      text(medal, 50, y, 18, '#fff', 'left');
-      text(r.s + ' điểm', 100, y, 18, i === 0 ? '#ffd700' : '#fff', 'left');
-      text('🪙' + (r.coins || 0), 240, y, 15, '#ffd700', 'left');
-      text(r.d, W - 40, y, 13, '#aaa', 'right');
+      text(medal, 32, y, 18, '#fff', 'left');
+      text(r.n || 'Bạn', 72, y, 16, i === 0 ? '#ffd700' : '#fff', 'left');
+      text(String(r.s), 262, y, 17, i === 0 ? '#ffd700' : '#fff', 'right');
+      text(r.d, W - 20, y, 11, '#aaa', 'right');
     });
     button('⬅ Quay lại', 40, H - 70, 150, 44, toMenu, true);
     button('🗑 Xóa hết', 210, H - 70, 150, 44, () => { scores = []; saveScores([]); }, false);
@@ -226,11 +251,12 @@ function drawScene() {
 
   if (scene === 'over') {
     overlay(0.7);
-    text('💥 GAME OVER', W / 2, 190, 38, '#ff5252');
-    text('Điểm: ' + state.score, W / 2, 240, 24);
-    if (lastRank === 0) text('🏆 KỶ LỤC MỚI!', W / 2, 280, 22, '#ffd700');
-    else if (lastRank > 0) text('Xếp hạng #' + (lastRank + 1) + ' trong top 10', W / 2, 280, 17, '#8f8');
-    else text('Kỷ lục hiện tại: ' + bestScore(), W / 2, 280, 16, '#aaa');
+    text('💥 GAME OVER', W / 2, 160, 38, '#ff5252');
+    text(getName() + ' gà quá! 🐔', W / 2, 210, 24, '#ffd54f');
+    text('Điểm: ' + state.score, W / 2, 252, 24);
+    if (lastRank === 0) text('🏆 KỶ LỤC MỚI!', W / 2, 290, 20, '#ffd700');
+    else if (lastRank > 0) text('Xếp hạng #' + (lastRank + 1) + ' trong top 10', W / 2, 290, 17, '#8f8');
+    else text('Kỷ lục hiện tại: ' + bestScore(), W / 2, 290, 16, '#aaa');
     button('🔄 Chơi lại', 100, 330, 200, 48, startGame, true);
     button('🏠 Menu', 100, 395, 200, 48, toMenu, false);
     text('Enter: chơi lại • Esc: menu', W / 2, H - 25, 13, '#aaa');
@@ -266,7 +292,15 @@ function update(dt) {
   s.coinTimer -= dt;
   if (s.coinTimer <= 0) { spawnCoin(); s.coinTimer = 1.5 + Math.random() * 2; }
 
-  for (const e of s.enemies) e.y += (s.speed - e.v) * dt;
+  for (const e of s.enemies) {
+    e.y += (s.speed - e.v) * dt;
+    if (e.vx) {                                   // người/thú chạy ngang qua đường
+      e.x += e.vx * dt;
+      const minX = ROAD_X + 2, maxX = ROAD_X + ROAD_W - e.w - 2;
+      if (e.x < minX) { e.x = minX; e.vx = Math.abs(e.vx); }
+      if (e.x > maxX) { e.x = maxX; e.vx = -Math.abs(e.vx); }
+    }
+  }
   for (const c of s.coins) c.y += s.speed * dt;
   s.enemies = s.enemies.filter(e => e.y < H + 100);
   s.coins = s.coins.filter(c => c.y < H + 30);
@@ -290,6 +324,10 @@ requestAnimationFrame(loop);
 
 // ---------- Điều khiển ----------
 window.addEventListener('keydown', e => {
+  if (document.activeElement === nameInput) {         // đang gõ tên: không điều khiển game
+    if (e.key === 'Enter' || e.key === 'Escape') { nameInput.blur(); canvas.focus(); }
+    return;
+  }
   const k = e.key;
   keys[k] = true;
   if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(k)) e.preventDefault();
@@ -339,4 +377,4 @@ canvas.focus();
 </script>
 """
 
-components.html(GAME_HTML, height=720, scrolling=False)
+components.html(GAME_HTML, height=790, scrolling=False)
