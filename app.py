@@ -20,7 +20,8 @@ GAME_HTML = """
   </div>
   <div style="margin-top:10px;display:flex;gap:12px;">
     <button id="btnL" style="font-size:24px;padding:10px 30px;border-radius:8px;">⬅️</button>
-    <button id="btnM" style="font-size:24px;padding:10px 18px;border-radius:8px;">🔊</button>
+    <button id="btnH" style="font-size:24px;padding:10px 14px;border-radius:8px;">📢</button>
+    <button id="btnM" style="font-size:24px;padding:10px 14px;border-radius:8px;">🔊</button>
     <button id="btnR" style="font-size:24px;padding:10px 30px;border-radius:8px;">➡️</button>
   </div>
 </div>
@@ -42,25 +43,60 @@ const COLORS = ['#e74c3c','#3498db','#f1c40f','#9b59b6','#1abc9c','#e67e22'];
 // =====================================================================
 //  ÂM THANH (WebAudio, tự tổng hợp - không cần file)
 // =====================================================================
-let AC = null, master, musicGain, sfxGain, engOsc, engGain, noiseBuf, muted = false;
+let AC = null, master, musicGain, sfxGain, noiseBuf, muted = false, hasPan = false;
+let engA, engB, engSub, engFilt, engGain, roadGain, roadFilt, windGain, windFilt;
+let lastGear = 0, lastVoice = 0, lastPass = 0, ambT = 4;
 const m2f = m => 440 * Math.pow(2, (m - 69) / 12);
 
+function makeImpulse(sec, decay) {                       // hồi âm (reverb) giả lập
+  const len = Math.floor(AC.sampleRate * sec), b = AC.createBuffer(2, len, AC.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+  }
+  return b;
+}
+function loopNoise(dest, ftype, freq, q) {
+  const src = AC.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+  const f = AC.createBiquadFilter(); f.type = ftype; f.frequency.value = freq; if (q) f.Q.value = q;
+  const g = AC.createGain(); g.gain.value = 0;
+  src.connect(f); f.connect(g); g.connect(dest); src.start();
+  return { f, g };
+}
 function initAudio() {
   if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
   try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; return; }
-  master = AC.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(AC.destination);
-  musicGain = AC.createGain(); musicGain.gain.value = 0.16; musicGain.connect(master);
-  sfxGain = AC.createGain(); sfxGain.gain.value = 0.55; sfxGain.connect(master);
+  hasPan = typeof AC.createStereoPanner === 'function';
+  master = AC.createGain(); master.gain.value = muted ? 0 : 0.85;
+  const comp = AC.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
+  master.connect(comp); comp.connect(AC.destination);
 
-  noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
-  const d = noiseBuf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const rev = AC.createConvolver(); rev.buffer = makeImpulse(1.6, 2.6);
+  const revG = AC.createGain(); revG.gain.value = 0.28; rev.connect(revG); revG.connect(master);
+  musicGain = AC.createGain(); musicGain.gain.value = 0.2; musicGain.connect(master);
+  const mSend = AC.createGain(); mSend.gain.value = 0.25; musicGain.connect(mSend); mSend.connect(rev);
+  sfxGain = AC.createGain(); sfxGain.gain.value = 0.6; sfxGain.connect(master);
+  const sSend = AC.createGain(); sSend.gain.value = 0.35; sfxGain.connect(sSend); sSend.connect(rev);
 
-  // tiếng động cơ
-  engOsc = AC.createOscillator(); engOsc.type = 'sawtooth'; engOsc.frequency.value = 60;
-  const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420;
+  noiseBuf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
+  const nd = noiseBuf.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+
+  // động cơ xe của bạn: 2 sóng răng cưa lệch nhẹ + sub + rung xi-lanh, qua bộ lọc
+  engA = AC.createOscillator(); engA.type = 'sawtooth';
+  engB = AC.createOscillator(); engB.type = 'sawtooth';
+  engSub = AC.createOscillator(); engSub.type = 'sine';
+  engFilt = AC.createBiquadFilter(); engFilt.type = 'lowpass'; engFilt.frequency.value = 500; engFilt.Q.value = 2;
+  const trem = AC.createGain(); trem.gain.value = 0.75;
+  const lfo = AC.createOscillator(), lfoG = AC.createGain(); lfo.frequency.value = 26; lfoG.gain.value = 0.25;
+  lfo.connect(lfoG); lfoG.connect(trem.gain); lfo.start();
+  const subG = AC.createGain(); subG.gain.value = 0.9;
   engGain = AC.createGain(); engGain.gain.value = 0;
-  engOsc.connect(f); f.connect(engGain); engGain.connect(sfxGain); engOsc.start();
+  engA.connect(engFilt); engB.connect(engFilt); engSub.connect(subG); subG.connect(engFilt);
+  engFilt.connect(trem); trem.connect(engGain); engGain.connect(sfxGain);
+  engA.start(); engB.start(); engSub.start();
+  const road = loopNoise(sfxGain, 'lowpass', 400); roadGain = road.g; roadFilt = road.f;   // tiếng lốp trên đường
+  const wind = loopNoise(sfxGain, 'bandpass', 1500, 0.7); windGain = wind.g; windFilt = wind.f; // tiếng gió
 
   nextT = AC.currentTime + 0.1;
   setInterval(scheduler, 50);
@@ -71,68 +107,85 @@ function toneAt(f, d, type, vol, t, dest, slide) {
   o.type = type; o.frequency.setValueAtTime(f, t);
   if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + d);
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-  o.connect(g); g.connect(dest); o.start(t); o.stop(t + d + 0.03);
+  o.connect(g); g.connect(dest || sfxGain); o.start(t); o.stop(t + d + 0.03);
 }
-function noiseAt(d, vol, f0, f1, ftype, t, dest) {
+function noiseAt(d, vol, f0, f1, ftype, t, dest, q) {
   const src = AC.createBufferSource(); src.buffer = noiseBuf;
-  const fl = AC.createBiquadFilter(); fl.type = ftype;
+  const fl = AC.createBiquadFilter(); fl.type = ftype; if (q) fl.Q.value = q;
   fl.frequency.setValueAtTime(f0, t); fl.frequency.exponentialRampToValueAtTime(f1, t + d);
   const g = AC.createGain();
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-  src.connect(fl); fl.connect(g); g.connect(dest); src.start(t); src.stop(t + d + 0.03);
+  src.connect(fl); fl.connect(g); g.connect(dest || sfxGain); src.start(t); src.stop(t + d + 0.03);
 }
-
-function sfxSwoosh() { if (!AC) return; noiseAt(0.2, 0.5, 500, 2200, 'bandpass', AC.currentTime, sfxGain); }
-function sfxCoin() {
-  if (!AC) return; const t = AC.currentTime;
-  toneAt(988, 0.09, 'square', 0.25, t, sfxGain); toneAt(1319, 0.18, 'square', 0.25, t + 0.08, sfxGain);
+function pannedDest(pan) {
+  if (!hasPan) return sfxGain;
+  const p = AC.createStereoPanner(); p.pan.value = pan; p.connect(sfxGain); return p;
 }
-function sfxCrash(living, who) {
-  if (!AC) return; const t = AC.currentTime;
-  if (living) {                                   // tiếng "bịch" + máu văng
-    noiseAt(0.3, 0.9, 1200, 120, 'lowpass', t, sfxGain);
-    toneAt(95, 0.3, 'sine', 1.0, t, sfxGain, 38);
-    noiseAt(0.25, 0.5, 3500, 600, 'bandpass', t + 0.05, sfxGain);
-    toneAt(180, 0.18, 'sawtooth', 0.4, t + 0.02, sfxGain, 70);
-  } else {                                        // nổ
-    noiseAt(1.1, 1.0, 3000, 60, 'lowpass', t, sfxGain);
-    toneAt(140, 0.7, 'sawtooth', 0.9, t, sfxGain, 30);
-    toneAt(60, 0.9, 'sine', 1.0, t, sfxGain, 25);
-  }
-  [392, 330, 262, 196].forEach((f, k) => toneAt(f, 0.28, 'triangle', 0.35, t + 1.0 + k * 0.27, sfxGain));
-  if (living) sfxScream(who); else if (who === 'car') sfxScreech();
-  if (who === 'person') {                                 // meme sau tiếng hét
-    const p = HIT_PHRASES[Math.floor(rnd() * HIT_PHRASES.length)];
-    setTimeout(() => speak(p[0], p[1], 1.0, 1.2), 900);
-  }
+function brassAt(f, d, t, vol, slide) {                  // kèn "wah wah" khi thua
+  const o = AC.createOscillator(), o2 = AC.createOscillator(), fl = AC.createBiquadFilter(), g = AC.createGain();
+  o.type = 'sawtooth'; o2.type = 'sawtooth'; o2.detune.value = 8;
+  [o, o2].forEach(x => { x.frequency.setValueAtTime(f, t); if (slide) x.frequency.exponentialRampToValueAtTime(slide, t + d); });
+  fl.type = 'lowpass'; fl.frequency.setValueAtTime(400, t);
+  fl.frequency.linearRampToValueAtTime(1600, t + d * 0.25); fl.frequency.linearRampToValueAtTime(700, t + d);
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.05);
+  g.gain.setValueAtTime(vol, t + d * 0.75); g.gain.linearRampToValueAtTime(0.0001, t + d);
+  o.connect(fl); o2.connect(fl); fl.connect(g); g.connect(sfxGain);
+  o.start(t); o2.start(t); o.stop(t + d + 0.03); o2.stop(t + d + 0.03);
 }
-function sfxStart() {
-  if (!AC) return; const t = AC.currentTime;
-  [523, 659, 784].forEach((f, i) => toneAt(f, 0.12, 'square', 0.2, t + i * 0.09, sfxGain));
-}
-
-// ---- giọng nói / tiếng kêu (tổng hợp formant) ----
-let lastVoice = 0, lastPass = 0;
-function voiceAt(fa, fb, d, vol, t, forms, vib) {
-  const o = AC.createOscillator(); o.type = 'sawtooth';
-  o.frequency.setValueAtTime(fa, t); o.frequency.linearRampToValueAtTime(fb, t + d);
-  if (vib) {
-    const l = AC.createOscillator(), lg = AC.createGain();
-    l.frequency.value = vib[0]; lg.gain.value = vib[1];
-    l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + d + 0.05);
-  }
-  const g = AC.createGain();
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.03);
-  g.gain.setValueAtTime(vol, t + d * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-  const dry = AC.createGain(); dry.gain.value = 0.12; o.connect(dry); dry.connect(g);
-  forms.forEach(fm => {
-    const b = AC.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = fm[0]; b.Q.value = fm[1];
-    const fg = AC.createGain(); fg.gain.value = fm[2];
-    o.connect(b); b.connect(fg); fg.connect(g);
+function hornAt(freqs, d, t, vol, dest) {                // còi xe
+  const g = AC.createGain(), fl = AC.createBiquadFilter();
+  fl.type = 'lowpass'; fl.frequency.value = 2200;
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.02);
+  g.gain.setValueAtTime(vol, t + d - 0.05); g.gain.linearRampToValueAtTime(0.0001, t + d);
+  freqs.forEach(f => {
+    ['square', 'sawtooth'].forEach((ty, k) => {
+      const o = AC.createOscillator(), og = AC.createGain();
+      o.type = ty; o.frequency.value = f * (k ? 1.005 : 1); og.gain.value = 0.5;
+      o.connect(og); og.connect(fl); o.start(t); o.stop(t + d + 0.03);
+    });
   });
-  g.connect(sfxGain); o.start(t); o.stop(t + d + 0.05);
+  fl.connect(g); g.connect(dest || sfxGain);
 }
-function speak(txt, lang, rate, pitch) {                 // giọng "meme" đọc bằng trình duyệt
+
+// ---- giọng / tiếng kêu: sóng răng cưa qua các bộ lọc formant có trượt tần số ----
+// forms: [[f đầu, f cuối, Q, gain], ...]   o: {mid:[tỉ lệ, tần số], vib:[Hz, độ sâu], rasp, breath, att}
+function voiceAt(fa, fb, d, vol, t, forms, o) {
+  o = o || {};
+  const osc = AC.createOscillator(); osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(fa, t);
+  if (o.mid) osc.frequency.linearRampToValueAtTime(o.mid[1], t + d * o.mid[0]);
+  osc.frequency.linearRampToValueAtTime(fb, t + d);
+  if (o.vib) {
+    const l = AC.createOscillator(), lg = AC.createGain();
+    l.frequency.value = o.vib[0]; lg.gain.value = o.vib[1];
+    l.connect(lg); lg.connect(osc.frequency); l.start(t); l.stop(t + d + 0.05);
+  }
+  const src = AC.createGain(); src.gain.value = 1;
+  if (o.rasp) {                                            // giọng khàn/rè
+    const r = AC.createOscillator(), rg = AC.createGain();
+    r.frequency.value = o.rasp; rg.gain.value = 0.45; src.gain.value = 0.55;
+    r.connect(rg); rg.connect(src.gain); r.start(t); r.stop(t + d + 0.05);
+  }
+  osc.connect(src);
+  const g = AC.createGain(), att = o.att || 0.03;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + att);
+  g.gain.setValueAtTime(vol, t + Math.max(att, d * 0.7)); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  const dry = AC.createGain(); dry.gain.value = 0.1; src.connect(dry); dry.connect(g);
+  forms.forEach(fm => {
+    const b = AC.createBiquadFilter(); b.type = 'bandpass'; b.Q.value = fm[2];
+    b.frequency.setValueAtTime(fm[0], t); b.frequency.linearRampToValueAtTime(fm[1], t + d);
+    const fg = AC.createGain(); fg.gain.value = fm[3];
+    src.connect(b); b.connect(fg); fg.connect(g);
+  });
+  if (o.breath) {                                          // hơi thở
+    const n = AC.createBufferSource(); n.buffer = noiseBuf;
+    const nb = AC.createBiquadFilter(); nb.type = 'bandpass'; nb.frequency.value = forms[1] ? forms[1][0] : 2000; nb.Q.value = 1.2;
+    const ng = AC.createGain(); ng.gain.value = 0.35;
+    n.connect(nb); nb.connect(ng); ng.connect(g); n.start(t); n.stop(t + d + 0.05);
+  }
+  g.connect(o.dest || sfxGain); osc.start(t); osc.stop(t + d + 0.05);
+}
+function speak(txt, lang, rate, pitch) {                 // câu "meme" đọc bằng giọng của trình duyệt
   if (muted || !('speechSynthesis' in window)) return;
   try {
     const u = new SpeechSynthesisUtterance(txt);
@@ -142,53 +195,102 @@ function speak(txt, lang, rate, pitch) {                 // giọng "meme" đọ
 }
 function stopSpeech() { try { window.speechSynthesis.cancel(); } catch (e) {} }
 
+// ---- tiếng động vật ----
 function sfxDog() {
   if (!AC) return; const t = AC.currentTime;
-  [0, 0.24].forEach(d => {
-    voiceAt(330, 170, 0.14, 0.9, t + d, [[750, 6, 3], [1500, 6, 2]]);
-    noiseAt(0.06, 0.3, 2500, 800, 'bandpass', t + d, sfxGain);
+  [0, 0.26].forEach((d, k) => {
+    voiceAt(300 - k * 20, 140, 0.16, 0.9, t + d, [[650, 900, 6, 3.5], [1100, 1400, 6, 2.5]], { mid: [0.15, 340], att: 0.008, breath: 1 });
+    noiseAt(0.05, 0.3, 2500, 800, 'bandpass', t + d, sfxGain);
   });
 }
 function sfxCat() {
   if (!AC) return; const t = AC.currentTime;
-  voiceAt(480, 900, 0.2, 0.8, t, [[900, 5, 3], [2300, 6, 2]], [7, 18]);
-  voiceAt(900, 430, 0.35, 0.8, t + 0.2, [[800, 5, 3], [2000, 6, 2]], [7, 12]);
+  voiceAt(450, 780, 0.22, 0.85, t, [[420, 850, 5, 3], [2200, 1500, 6, 2.5]], { vib: [6, 14] });
+  voiceAt(780, 420, 0.42, 0.85, t + 0.2, [[850, 500, 5, 3], [1500, 950, 6, 2.5]], { vib: [6, 12] });
 }
-function sfxCow() { if (!AC) return; voiceAt(120, 100, 1.0, 0.9, AC.currentTime, [[320, 5, 4], [650, 5, 2]], [5, 5]); }
-function sfxHonk() {
-  if (!AC) return; const t = AC.currentTime;
-  [0, 0.22].forEach(d => { toneAt(420, 0.16, 'square', 0.28, t + d, sfxGain); toneAt(530, 0.16, 'square', 0.18, t + d, sfxGain); });
+function sfxCow() {
+  if (!AC) return;
+  voiceAt(100, 88, 1.3, 0.95, AC.currentTime, [[330, 480, 5, 4], [800, 900, 5, 2]], { mid: [0.25, 125], vib: [5, 4], att: 0.08 });
 }
-function sfxPass() {                                      // xe vụt qua
+// ---- tiếng xe cộ ----
+function sfxHonk(kind, dest, vol) {
+  if (!AC) return; const t = AC.currentTime; vol = vol || 0.26;
+  if (kind === undefined) kind = Math.floor(rnd() * 4);
+  if (kind === 0) { hornAt([420, 530], 0.16, t, vol, dest); hornAt([420, 530], 0.16, t + 0.24, vol, dest); }      // bíp bíp
+  else if (kind === 1) hornAt([400, 500], 0.75, t, vol, dest);                                                    // bíiiip dài
+  else if (kind === 2) hornAt([196, 247, 311], 0.95, t, vol * 1.1, dest);                                         // còi xe tải
+  else { hornAt([560, 700], 0.12, t, vol, dest); hornAt([560, 700], 0.12, t + 0.17, vol, dest); hornAt([560, 700], 0.25, t + 0.34, vol, dest); } // xe máy
+}
+function sfxPass() {
   if (!AC) return; const t = AC.currentTime;
   if (t - lastPass < 0.3) return; lastPass = t;
-  toneAt(240, 0.6, 'sawtooth', 0.2, t, sfxGain, 80);
-  noiseAt(0.6, 0.4, 1800, 250, 'bandpass', t, sfxGain);
+  noiseAt(0.5, 0.28, 2200, 300, 'bandpass', t, sfxGain, 1);
+}
+function sfxShift() {                                     // sang số
+  if (!AC) return;
+  noiseAt(0.14, 0.28, 3200, 900, 'bandpass', AC.currentTime, sfxGain, 1.2);
 }
 function sfxScreech() {                                   // phanh rít
   if (!AC) return; const t = AC.currentTime;
   noiseAt(0.7, 0.5, 6000, 2500, 'highpass', t, sfxGain);
-  toneAt(1800, 0.6, 'sawtooth', 0.12, t, sfxGain, 1100);
+  toneAt(1800, 0.6, 'sawtooth', 0.1, t, sfxGain, 1100);
 }
-function sfxScream(who) {                                 // tiếng hét khi bị tông
+function sfxAmbientTraffic() {                            // xe cộ ở xa trên phố
+  if (!AC) return; const t = AC.currentTime, d = pannedDest((rnd() < 0.5 ? -1 : 1) * 0.8), k = Math.floor(rnd() * 4);
+  if (k === 0) sfxHonk(undefined, d, 0.1);
+  else if (k === 1) { toneAt(140, 1.4, 'sawtooth', 0.1, t, d, 320); noiseAt(1.4, 0.12, 1500, 600, 'bandpass', t, d); }   // xe máy vù qua
+  else if (k === 2) { noiseAt(2.2, 0.16, 220, 90, 'lowpass', t, d); toneAt(70, 2.2, 'sawtooth', 0.08, t, d, 45); }        // xe tải rền
+  else for (let i = 0; i < 4; i++) toneAt(i % 2 ? 700 : 950, 0.45, 'sine', 0.07, t + i * 0.5, d);                          // còi hụ xa
+}
+
+// ---- tiếng động cơ của từng xe trong giao thông (có hiệu ứng Doppler khi lướt qua) ----
+function ensureCarVoice(e) {
+  if (e.voice || !AC || e.kind !== 'car') return;
+  const o1 = AC.createOscillator(), o2 = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain();
+  const p = hasPan ? AC.createStereoPanner() : null;
+  e.pitch = 70 + rnd() * 60;
+  o1.type = 'sawtooth'; o2.type = 'square'; f.type = 'lowpass'; f.frequency.value = 600; g.gain.value = 0;
+  o1.frequency.value = e.pitch; o2.frequency.value = e.pitch * 0.5;
+  o1.connect(f); o2.connect(f); f.connect(g);
+  if (p) { g.connect(p); p.connect(sfxGain); } else g.connect(sfxGain);
+  o1.start(); o2.start();
+  e.voice = { o1, o2, g, p, f };
+}
+function updateCarVoice(e) {
+  const v = e.voice; if (!v) return;
+  const now = AC.currentTime, dy = e.y - state.y, dist = Math.abs(dy);
+  const near = Math.exp(-Math.pow(dist / 220, 2));
+  const dop = 1 - 0.18 * Math.tanh(dy / 70);                // xe đang tới: cao hơn, đã qua: thấp xuống
+  v.g.gain.setTargetAtTime(0.2 * near, now, 0.05);
+  v.o1.frequency.setTargetAtTime(e.pitch * dop, now, 0.05);
+  v.o2.frequency.setTargetAtTime(e.pitch * 0.5 * dop, now, 0.05);
+  v.f.frequency.setTargetAtTime(350 + 450 * near, now, 0.08);
+  if (v.p) v.p.pan.setTargetAtTime(Math.max(-1, Math.min(1, (e.x - state.x) / 180)), now, 0.05);
+}
+function endVoice(e) {
+  const v = e.voice; if (!v) return;
+  e.voice = null;
+  try { v.g.gain.setTargetAtTime(0, AC.currentTime, 0.05); v.o1.stop(AC.currentTime + 0.3); v.o2.stop(AC.currentTime + 0.3); } catch (er) {}
+}
+function endAllVoices() { if (state) state.enemies.forEach(endVoice); }
+
+// ---- tiếng hét khi bị tông ----
+function sfxScream(who) {
   if (!AC) return; const t = AC.currentTime;
   if (who === 'person') {
-    voiceAt(600, 1250, 0.45, 1.0, t, [[900, 4, 3], [1500, 5, 3], [2800, 6, 1.5]], [11, 50]);
-    voiceAt(1250, 1000, 0.75, 1.0, t + 0.45, [[850, 4, 3], [1600, 5, 3], [2900, 6, 1.5]], [13, 60]);
-    voiceAt(700, 1300, 0.4, 0.6, t + 0.05, [[1000, 4, 3], [2000, 5, 2]], [9, 40]);
+    voiceAt(650, 1150, 1.15, 1.0, t, [[850, 1000, 5, 3.5], [1400, 1700, 5, 3], [2800, 3100, 6, 2]], { mid: [0.2, 1400], vib: [6.5, 45], rasp: 60, breath: 1 });
+    voiceAt(660, 1180, 1.1, 0.7, t + 0.03, [[900, 1050, 5, 3], [1500, 1800, 5, 2.5]], { mid: [0.2, 1440], vib: [7, 50], rasp: 55 });
   } else if (who === 'dog') {
-    voiceAt(800, 1800, 0.15, 0.9, t, [[1200, 5, 3], [2600, 6, 2]]);
-    voiceAt(1800, 600, 0.35, 0.9, t + 0.15, [[1200, 5, 3], [2400, 6, 2]], [9, 60]);
+    voiceAt(800, 600, 0.45, 0.9, t, [[900, 1100, 5, 3], [2300, 2600, 6, 2]], { mid: [0.25, 1800], vib: [10, 50] });
   } else if (who === 'cat') {
-    voiceAt(900, 2300, 0.55, 0.9, t, [[1500, 4, 3], [3000, 6, 2]], [28, 80]);
-    noiseAt(0.5, 0.3, 6000, 3000, 'bandpass', t, sfxGain);
+    voiceAt(850, 1500, 0.7, 0.9, t, [[1300, 1600, 4, 3], [2900, 3200, 6, 2]], { mid: [0.3, 2100], vib: [26, 80], rasp: 70, breath: 1 });
   } else if (who === 'cow') {
-    voiceAt(140, 230, 1.0, 1.0, t, [[350, 5, 4], [800, 5, 2]], [6, 10]);
+    voiceAt(150, 140, 1.2, 1.0, t, [[380, 500, 5, 4], [850, 900, 5, 2]], { mid: [0.3, 250], vib: [6, 10] });
   }
 }
 const IDLE_PHRASES = [['Ê ê ê!', 'vi-VN'], ['Ơ kìa!', 'vi-VN'], ['Bruh', 'en-US'], ['Ayo?', 'en-US'], ['Đi đâu vậy trời', 'vi-VN']];
 const HIT_PHRASES = [['Ối giời ơi!', 'vi-VN'], ['Bruh', 'en-US'], ['Oh no no no no', 'en-US'], ['Trời ơi!', 'vi-VN']];
-function ambientSound(e) {                                // âm thanh khi vật cản xuất hiện
+function ambientSound(e) {                                // khi vật cản xuất hiện
   const now = performance.now();
   if (now - lastVoice < 700) return;
   if (e.snd === 'car') { if (rnd() < 0.6) { sfxHonk(); lastVoice = now; } return; }
@@ -199,40 +301,116 @@ function ambientSound(e) {                                // âm thanh khi vật
   else if (e.snd === 'person') { const p = IDLE_PHRASES[Math.floor(rnd() * IDLE_PHRASES.length)]; speak(p[0], p[1], 1.05, 1.1); }
 }
 
-// nhạc nền: 4 hợp âm Am - F - C - G, tempo tăng dần theo tốc độ xe
-const CHORDS = [[57, 60, 64], [53, 57, 60], [55, 60, 64], [55, 59, 62]];
-const BASS = [45, 41, 48, 43], ARP = [0, 1, 2, 1, 0, 1, 2, 1];
+// ---- hiệu ứng chung ----
+function sfxSwoosh() {
+  if (!AC) return; const t = AC.currentTime;
+  noiseAt(0.22, 0.4, 500, 2400, 'bandpass', t, sfxGain, 1.2);
+  if (state.speed > 560) {                                // phanh lốp rít khi đánh lái gấp
+    noiseAt(0.25, 0.16, 7000, 4000, 'highpass', t, sfxGain);
+    toneAt(1500, 0.22, 'sine', 0.05, t, sfxGain, 1100);
+  }
+}
+function sfxCoin() {
+  if (!AC) return; const t = AC.currentTime;
+  [1319, 1760, 2093].forEach((f, i) => toneAt(f, 0.22 - i * 0.03, 'triangle', 0.22, t + i * 0.06, sfxGain));
+  toneAt(2637, 0.3, 'sine', 0.08, t + 0.18, sfxGain);
+}
+function sfxStart() {
+  if (!AC) return; const t = AC.currentTime;
+  toneAt(80, 0.6, 'sawtooth', 0.25, t, sfxGain, 260);     // rồ ga
+  noiseAt(0.5, 0.15, 400, 1800, 'bandpass', t, sfxGain);
+  [0, 0.12].forEach(d => toneAt(660, 0.09, 'square', 0.15, t + d, sfxGain));
+  toneAt(990, 0.25, 'square', 0.18, t + 0.26, sfxGain);
+}
+function sfxCrash(living, who) {
+  if (!AC) return; const t = AC.currentTime;
+  if (living) {                                           // "bịch" + tiếng hét
+    toneAt(110, 0.28, 'sine', 1.0, t, sfxGain, 38);
+    noiseAt(0.25, 0.9, 1200, 120, 'lowpass', t, sfxGain);
+    noiseAt(0.2, 0.4, 3000, 500, 'bandpass', t + 0.04, sfxGain, 1.5);
+    sfxScream(who);
+  } else {                                                // nổ + kim loại + kính vỡ
+    toneAt(95, 1.0, 'sine', 1.2, t, sfxGain, 26);
+    noiseAt(1.3, 1.0, 4200, 70, 'lowpass', t, sfxGain);
+    toneAt(150, 0.6, 'sawtooth', 0.6, t, sfxGain, 35);
+    for (let i = 0; i < 6; i++) toneAt(200 + rnd() * 700, 0.12, 'square', 0.16, t + rnd() * 0.12, sfxGain, 60 + rnd() * 200);
+    for (let i = 0; i < 16; i++) noiseAt(0.05, 0.22, 6500 + rnd() * 2000, 5000, 'highpass', t + 0.05 + rnd() * 0.7, sfxGain);
+    if (who === 'car') sfxScreech();
+  }
+  [[311, 0.32], [294, 0.32], [277, 0.32]].forEach((n, k) => brassAt(n[0], n[1], t + 1.05 + k * 0.36, 0.3, n[0] * 0.985));
+  brassAt(262, 1.1, t + 2.13, 0.3, 205);                  // "wah wah wah waaah"
+  if (who === 'person') {
+    const p = HIT_PHRASES[Math.floor(rnd() * HIT_PHRASES.length)];
+    setTimeout(() => speak(p[0], p[1], 1.0, 1.2), 1500);
+  }
+}
+
+// ---- nhạc nền: 4 hợp âm Am - F - C - G, có trống, bass, pad và giai điệu ----
+const CHORDS = [[57, 60, 64], [53, 57, 60], [55, 60, 64], [55, 59, 62]], BASS = [45, 41, 48, 43];
+const MELODY = [76, 0, 72, 0, 74, 0, 72, 0,  77, 0, 74, 0, 72, 0, 69, 0,
+                76, 0, 79, 0, 76, 0, 72, 0,  74, 0, 71, 0, 74, 0, 79, 0];
 let nextT = 0, stepI = 0, stepD = 0.115;
 
+function noteAt(f, d, t, vol, type, c0, c1, dest, det) {
+  const o = AC.createOscillator(), fl = AC.createBiquadFilter(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t); if (det) o.detune.value = det;
+  fl.type = 'lowpass'; fl.frequency.setValueAtTime(c0, t); fl.frequency.exponentialRampToValueAtTime(c1, t + d);
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  o.connect(fl); fl.connect(g); g.connect(dest); o.start(t); o.stop(t + d + 0.03);
+}
 function musicShouldPlay() { return scene !== 'over' && scene !== 'crash' && !(scene === 'play' && state.paused); }
 function playStep(i, t) {
-  const ci = Math.floor(i / 8) % 4, chord = CHORDS[ci], st = i % 8;
-  if (st % 2 === 0) toneAt(m2f(BASS[ci] + (st % 4 === 2 ? 12 : 0)), stepD * 1.8, 'triangle', 0.6, t, musicGain);
-  toneAt(m2f(chord[ARP[st]] + 12), stepD * 0.9, 'square', 0.2, t, musicGain);
-  if (i % 4 === 0) toneAt(150, 0.12, 'sine', 0.7, t, musicGain, 50);
-  if (i % 2 === 1) noiseAt(0.04, 0.12, 7000, 7000, 'highpass', t, musicGain);
+  const bar = Math.floor(i / 8) % 4, chord = CHORDS[bar], st = i % 8, m = musicGain;
+  if (i % 4 === 0) { toneAt(160, 0.13, 'sine', 0.9, t, m, 45); noiseAt(0.015, 0.25, 4000, 4000, 'highpass', t, m); }
+  if (i % 16 === 4 || i % 16 === 12) { noiseAt(0.14, 0.45, 2500, 1500, 'bandpass', t, m); toneAt(210, 0.09, 'triangle', 0.35, t, m, 120); }
+  if (i % 2 === 0) noiseAt(0.04, i % 4 === 2 ? 0.16 : 0.09, 7500, 7500, 'highpass', t, m);
+  if (i % 16 === 14) noiseAt(0.18, 0.13, 7000, 7000, 'highpass', t, m);
+  if ([1, 0, 1, 0, 1, 1, 0, 1][st]) noteAt(m2f(BASS[bar] + (st === 5 ? 12 : 0)), stepD * 1.7, t, 0.5, 'sawtooth', 900, 200, m);
+  if (st === 0) chord.forEach(n => noteAt(m2f(n), stepD * 8, t, 0.07, 'triangle', 1200, 1100, m, (rnd() - 0.5) * 10));
+  const mel = MELODY[i % 32];
+  if (mel) {
+    noteAt(m2f(mel), stepD * 3.2, t, 0.16, 'square', 3200, 700, m);
+    noteAt(m2f(mel), stepD * 3.2, t, 0.10, 'sawtooth', 2600, 600, m, 9);
+  }
 }
 function scheduler() {
   if (!AC || AC.state !== 'running') return;
   if (nextT < AC.currentTime - 0.3) nextT = AC.currentTime + 0.05;
   while (nextT < AC.currentTime + 0.25) {
-    const bpm = scene === 'play' ? Math.min(190, 125 + (state.speed - START_SPEED) / 12) : 125;
+    const bpm = scene === 'play' ? Math.min(176, 122 + (state.speed - START_SPEED) / 14) : 122;
     stepD = 60 / bpm / 4;
     if (musicShouldPlay()) playStep(stepI, nextT);
     stepI++; nextT += stepD;
   }
 }
+
+// ---- động cơ / lốp / gió theo tốc độ, có sang số ----
+const GEAR_LIM = [380, 540, 700, 880, 1100];
 function audioTick() {
   if (!AC) return;
-  const on = scene === 'play' && !state.paused;
-  engGain.gain.setTargetAtTime(on ? 0.11 : 0, AC.currentTime, 0.08);
-  if (on) engOsc.frequency.setTargetAtTime(55 + state.speed * 0.13, AC.currentTime, 0.1);
+  const now = AC.currentTime, on = scene === 'play' && !state.paused, sp = state.speed;
+  let gi = 0; while (gi < GEAR_LIM.length - 1 && sp >= GEAR_LIM[gi]) gi++;
+  const lo = gi ? GEAR_LIM[gi - 1] : 200;
+  const frac = Math.max(0, Math.min(1, (sp - lo) / (GEAR_LIM[gi] - lo)));
+  const f = 58 + frac * 72 + gi * 9;
+  if (scene === 'play') { if (!state.paused && gi > lastGear) sfxShift(); lastGear = gi; }
+  engGain.gain.setTargetAtTime(on ? 0.14 : 0, now, 0.08);
+  engA.frequency.setTargetAtTime(f, now, 0.06);
+  engB.frequency.setTargetAtTime(f * 1.012, now, 0.06);
+  engSub.frequency.setTargetAtTime(f * 0.5, now, 0.06);
+  engFilt.frequency.setTargetAtTime(380 + frac * 450 + gi * 90, now, 0.1);
+  roadGain.gain.setTargetAtTime(on ? Math.min(0.14, sp / 1100 * 0.14) : 0, now, 0.15);
+  roadFilt.frequency.setTargetAtTime(220 + sp * 0.45, now, 0.2);
+  windGain.gain.setTargetAtTime(on ? Math.max(0, (sp - 450) / 650 * 0.09) : 0, now, 0.2);
+  windFilt.frequency.setTargetAtTime(900 + sp * 1.1, now, 0.2);
+  if (!on) state.enemies.forEach(e => { if (e.voice) e.voice.g.gain.setTargetAtTime(0, now, 0.05); });
 }
 
 const btnM = document.getElementById('btnM');
 btnM.addEventListener('click', () => {
   initAudio(); muted = !muted;
-  if (master) master.gain.value = muted ? 0 : 0.8;
+  if (master) master.gain.value = muted ? 0 : 0.85;
   btnM.textContent = muted ? '🔇' : '🔊';
   if (muted) stopSpeech();
   canvas.focus();
@@ -298,8 +476,8 @@ function reset() {
 }
 reset();
 
-function startGame() { stopSpeech(); reset(); scene = 'play'; sfxStart(); }
-function toMenu() { stopSpeech(); scene = 'menu'; state.paused = false; }
+function startGame() { endAllVoices(); stopSpeech(); lastGear = 0; ambT = 4; reset(); scene = 'play'; sfxStart(); }
+function toMenu() { endAllVoices(); stopSpeech(); scene = 'menu'; state.paused = false; }
 function gameOver(e) {
   lastRank = addScore(state.score, state.coinCount);
   const living = e.kind === 'emoji' && !!e.walk;          // người / động vật
@@ -310,6 +488,7 @@ function gameOver(e) {
   else e.dead = true;
   state.fx.spin = living ? 0 : (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.35);
   scene = 'crash';
+  endAllVoices();
   sfxCrash(living, e.snd);
 }
 const menuActions = [startGame, () => { scene = 'scores'; }, () => { scene = 'help'; }, () => { scene = 'name'; }];
@@ -607,7 +786,7 @@ function drawSceneInner() {
     overlay(0.75);
     text('❓ HƯỚNG DẪN', W / 2, 80, 28);
     const lines = ['← → hoặc A D : đổi sang làn kế bên', 'P hoặc Esc : tạm dừng', 'Nhặt xu 🪙 : +5 điểm',
-                   'Tránh xe, người, chó mèo, chướng ngại', 'Xe càng chạy càng nhanh', 'Nút 🔊 : bật/tắt âm thanh',
+                   'Tránh xe, người, chó mèo, chướng ngại', 'Xe càng chạy càng nhanh', 'H hoặc nút 📢 : bấm còi • 🔊 : bật/tắt tiếng',
                    'Điện thoại: dùng 2 nút bên dưới'];
     lines.forEach((l, i) => text(l, W / 2, 145 + i * 40, 17, '#eee'));
     button('⬅ Quay lại', 100, H - 80, 200, 46, toMenu, true);
@@ -686,6 +865,9 @@ function update(dt) {
   if (scene !== 'play') { s.roadOffset += 120 * dt; moveScenery(120 * dt); return; }
   if (s.paused) return;
 
+  ambT -= dt;
+  if (ambT <= 0) { sfxAmbientTraffic(); ambT = 5 + rnd() * 8; }
+
   s.t = Math.min(1, s.t + dt / LANE_TIME);
   s.x = s.fromX + (s.toX - s.fromX) * easeInOut(s.t);
 
@@ -701,6 +883,7 @@ function update(dt) {
 
   for (const e of s.enemies) {
     e.y += (s.speed - e.v) * dt;
+    if (e.kind === 'car') { ensureCarVoice(e); updateCarVoice(e); }
     if (!e.said && e.y > 30) { e.said = true; ambientSound(e); }
     if (e.kind === 'car' && !e.passed && e.y > s.y + CAR_H) {
       e.passed = true;
@@ -714,6 +897,7 @@ function update(dt) {
     }
   }
   for (const c of s.coins) c.y += s.speed * dt;
+  for (const e of s.enemies) if (e.y >= H + 100) endVoice(e);
   s.enemies = s.enemies.filter(e => e.y < H + 100);
   s.coins = s.coins.filter(c => c.y < H + 30);
 
@@ -765,6 +949,7 @@ window.addEventListener('keydown', e => {
     if (k === 'p' || k === 'P' || k === 'Escape') state.paused = !state.paused;
     else if (!e.repeat && (k === 'ArrowLeft' || k === 'a' || k === 'A')) moveLane(-1);
     else if (!e.repeat && (k === 'ArrowRight' || k === 'd' || k === 'D')) moveLane(1);
+    else if (!e.repeat && (k === 'h' || k === 'H') && !state.paused) sfxHonk(0, sfxGain, 0.3);
     else if (state.paused && (k === 'm' || k === 'M')) toMenu();
   } else if (scene === 'over') {
     if (k === 'Enter' || k === ' ') startGame();
@@ -800,6 +985,7 @@ function bindBtn(id, d) {
   b.addEventListener('touchstart', go);
 }
 bindBtn('btnL', -1); bindBtn('btnR', 1);
+document.getElementById('btnH').addEventListener('click', () => { initAudio(); if (scene === 'play' && !state.paused) sfxHonk(0, sfxGain, 0.3); canvas.focus(); });
 </script>
 """
 
