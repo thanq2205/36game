@@ -35,6 +35,7 @@ GAME_HTML = r"""
   #cap{position:absolute;left:50%;bottom:34px;transform:translateX(-50%);display:none;background:#e8c99a;border:4px solid #2e1d0e;color:#3d2712;
        font-weight:bold;font-size:20px;padding:8px 18px;box-shadow:0 5px 0 #2e1d0e;white-space:nowrap}
   #skip{position:absolute;right:12px;bottom:8px;display:none;color:#fff;font-size:13px;font-weight:bold;text-shadow:1px 1px 0 #000}
+  #mn{display:none} #msg.over #mn{display:inline-block} #msg.over #bg, #msg.over #br2{display:none}
 </style>
 <div id="wrap">
   <div id="hud"><span id="n">?</span> &nbsp;|&nbsp; <span id="s">0</span></div>
@@ -46,7 +47,7 @@ GAME_HTML = r"""
       <button class="btn g" id="go">▶ Chơi</button>
       <button class="btn" id="bg">Hướng dẫn</button>
       <button class="btn" id="br2">Đổi tên</button>
-      <button class="btn" id="snd">🔊 Âm thanh: BẬT</button></div>
+      <button class="btn" id="mn">Về menu</button></div>
     <div id="vGuide" style="display:none"><h1>Hướng dẫn</h1><div id="guide">
       ← → : đổi làn<br>↑ / Space : nhảy<br>↓ / S : cúi, trượt<br>
       Xe tải, xe rơm, máy cày: nhảy lên nóc chạy<br>Trâu, đá, khúc gỗ, hàng rào, xe máy, mương: nhảy qua<br>Cổng tre, cành cây thấp: cúi xuống<br>Vịt, xe cút kít, gạch, chum: nhảy qua<br>Cây, tường rơm cao: không nhảy được, đổi làn<br>Space: bỏ qua đoạn mở đầu · M: tắt tiếng<br>
@@ -66,6 +67,7 @@ let overMode=false;
 function view(v){['vMain','vGuide','vName'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
 function setName(n){NAME=n; $('n').textContent=n||'?'; best=0; try{localStorage.setItem('runner_name',n);best=+localStorage.getItem('best_'+n)||0}catch(e){}
   $('best').textContent='🏆 Điểm cao: '+best; $('res').innerHTML=n?'Chào <b>'+n+'</b>!':'';}
+$('mn').onclick=()=>{reset(); alive=false; overMode=false; showoff=false; dying=0; $('res').innerHTML=NAME?'Chào <b>'+NAME+'</b>!':''; $('go').textContent='▶ Chơi'; view('vMain');};
 $('bg').onclick=()=>view('vGuide'); $('bk1').onclick=()=>view('vMain');
 $('br2').onclick=()=>{$('nm').value=NAME;view('vName');$('nm').focus();};
 $('ok').onclick=()=>{const v=$('nm').value.trim(); if(!v){$('nm').focus();return;} setName(v); view('vMain');};
@@ -145,8 +147,7 @@ function ambience(on){
   cl.connect(clg); clg.connect(cg.gain); c.connect(cg); cg.connect(AC.destination); c.start(); cl.start(); amb.push(c,cl);
   ambT=setInterval(()=>{const r=Math.random(); if(r<.6)chirp(); else if(r<.66)rooster(); else if(r<.72)chirp();},2000);
 }
-$('mute').onclick=()=>{muted=!muted;$('mute').textContent=muted?'🔇':'🔊'; $('snd').textContent=muted?'🔇 Âm thanh: TẮT':'🔊 Âm thanh: BẬT'; if(ambWanted)ambience(!muted);};
-$('snd').onclick=()=>$('mute').click();
+$('mute').onclick=()=>{muted=!muted;$('mute').textContent=muted?'🔇':'🔊'; if(ambWanted)ambience(!muted);};
 
 /* ================= CẢNH LÀNG QUÊ ================= */
 function canvasTex(w,h,draw,rx,ry){
