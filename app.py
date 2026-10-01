@@ -1,8 +1,8 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="CHÓ DÍ", page_icon="🏃", layout="wide")
-st.markdown("<h3 style='text-align:center'>CHÓ DÍ</h3>", unsafe_allow_html=True)
+st.set_page_config(page_title="Chạy trốn chó dữ", page_icon="🏃", layout="wide")
+st.markdown("<h3 style='text-align:center'>🌾🏃💨🐕 Chạy trốn chó dữ: làng quê</h3>", unsafe_allow_html=True)
 
 GAME_HTML = r"""
 <style>
@@ -22,13 +22,17 @@ GAME_HTML = r"""
   #nm{width:85%;font-family:inherit;font-size:17px;font-weight:bold;padding:8px;border:4px solid #2e1d0e;background:#fff3d6;text-align:center;margin:6px 0}
   #guide{text-align:left;font-size:14px;line-height:1.75;font-weight:bold}
   #best{color:#7a2e0e;font-weight:bold;margin:6px 0} #res{font-size:16px;font-weight:bold;line-height:1.6}
+  #msg.over{align-items:flex-end;background:transparent;padding-bottom:16px}
+  #msg.over #card{width:600px;max-width:94%;padding:12px 18px}
+  #msg.over #card h1{display:none} #msg.over #res{font-size:17px}
+  #msg.over .btn{display:inline-block;width:auto;margin:8px 6px;padding:9px 16px;font-size:15px}
   #pad{position:absolute;bottom:10px;width:100%;display:flex;justify-content:center;gap:10px}
   #pad button{font-size:20px;padding:8px 18px;border:3px solid #2e1d0e;background:rgba(232,201,154,.85);font-family:inherit}
   #mute{position:absolute;top:10px;right:10px;border:3px solid #2e1d0e;padding:6px 10px;background:#e8c99a;font-size:16px}
   #blood{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s;background:radial-gradient(transparent 30%,rgba(190,0,0,.85))}
 </style>
 <div id="wrap">
-  <div id="hud">👤 <span id="n">?</span> | 🏁 <span id="s">0</span> | ⭐ Cấp <span id="lv">1</span></div>
+  <div id="hud"><span id="n">?</span> &nbsp;|&nbsp; <span id="s">0</span></div>
   <div id="blood"></div>
   <button id="mute">🔊</button>
   <div id="msg"><div id="card">
@@ -38,7 +42,7 @@ GAME_HTML = r"""
       <button class="btn" id="br2">Đổi tên</button></div>
     <div id="vGuide" style="display:none"><h1>Hướng dẫn</h1><div id="guide">
       ← → : đổi làn<br>↑ / Space : nhảy<br>↓ / S : cúi, trượt<br>
-      Xe tải, xe rơm: nhảy lên nóc, chạy trên đó<br>Trâu, hàng rào, mương: nhảy qua<br>Cổng tre: cúi xuống<br>
+      Xe tải, xe rơm, máy cày: nhảy lên nóc chạy<br>Trâu, đá, khúc gỗ, hàng rào, xe máy, mương: nhảy qua<br>Cổng tre: cúi xuống<br>Cây giữa đường: không nhảy, không trượt được, phải đổi làn<br>
       <span style="color:#b71c1c">Đụng 1 lần là chó cắn!</span></div>
       <button class="btn" id="bk1">◀ Quay lại</button></div>
     <div id="vName" style="display:none"><h1>Nhập tên</h1>
@@ -51,7 +55,8 @@ GAME_HTML = r"""
 const $=id=>document.getElementById(id);
 let NAME='', best=0;
 try{NAME=localStorage.getItem('runner_name')||''}catch(e){}
-function view(v){['vMain','vGuide','vName'].forEach(i=>$(i).style.display=(i===v?'block':'none'));}
+let overMode=false;
+function view(v){['vMain','vGuide','vName'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
 function setName(n){NAME=n; $('n').textContent=n||'?'; best=0; try{localStorage.setItem('runner_name',n);best=+localStorage.getItem('best_'+n)||0}catch(e){}
   $('best').textContent='🏆 Điểm cao: '+best; $('res').innerHTML=n?'Chào <b>'+n+'</b>!':'';}
 $('bg').onclick=()=>view('vGuide'); $('bk1').onclick=()=>view('vMain');
@@ -99,6 +104,8 @@ const sfx={
   horn:()=>{const h=d=>{tn(330,330,d,'sawtooth',.1,900);tn(415,415,d,'sawtooth',.09,1100)}; h(.4); setTimeout(()=>h(.3),520)},
   moo:()=>tn(140,95,1,'sawtooth',.16,320),
   creak:()=>tn(520,330,.5,'sawtooth',.05,800),
+  engine:()=>{for(let i=0;i<8;i++)setTimeout(()=>tn(70,55,.08,'square',.13,220),i*95)},
+  moto:()=>{tn(110,240,.5,'sawtooth',.08,600); setTimeout(()=>tn(240,120,.4,'sawtooth',.07,600),450)},
   crash:()=>{nz(.4,.6,700,.5,.01,'lowpass'); tn(140,35,.4,'sawtooth',.25,300)},
   splash:()=>nz(.6,.4,3500,.6,.05),
   scream:()=>{ if(muted||!AC)return; const T=AC.currentTime,o=AC.createOscillator(),l=AC.createOscillator(),lg=AC.createGain(),
@@ -247,26 +254,26 @@ for(let i=0;i<7;i++){const g=new THREE.Group(),m=new THREE.MeshBasicMaterial({co
   g.position.set(-60+Math.random()*120,22+Math.random()*10,-80-Math.random()*30); scene.add(g); clouds.push(g);}
 function shadow(){return new THREE.Group();}
 
-/* ================= NHÂN VẬT: cậu nhóc da đen "trẻ trâu" low-poly ================= */
+/* ================= NHÂN VẬT: cậu nhóc da đen, chỉ mặc quần, tóc mái chéo ================= */
 const skin=L(0x2e1c10), player=new THREE.Group(), lim={};
 function limbP(px,py,parts){const p=new THREE.Group(); p.position.set(px,py,0);
   parts.forEach(a=>{const m=new THREE.Mesh(a[0],a[1]); m.position.set(0,a[2],a[3]||0); p.add(m);}); player.add(p); return p;}
 const BG=(w,h,d)=>new THREE.BoxGeometry(w,h,d);
-player.add(bx(.76,.74,.5,0xd32f2f,0,1.12,0));                       // áo thun đỏ
-player.add(bx(.78,.3,.52,0x1565c0,0,.78,0));                        // quần đùi
-const printTex=canvasTex(128,128,(x,w,h)=>{x.fillStyle='#d32f2f';x.fillRect(0,0,w,h);x.fillStyle='#fff';x.font='bold 44px monospace';x.textAlign='center';x.fillText('NO.1',64,78);});
-const pr=new THREE.Mesh(new THREE.PlaneGeometry(.7,.68),new THREE.MeshLambertMaterial({map:printTex})); pr.position.set(0,1.12,.26); player.add(pr);
+player.add(bx(.78,.74,.5,0x2e1c10,0,1.12,0));                        // thân trần
+player.add(bx(.06,.6,.02,0x24150b,0,1.12,.26));                      // đường sống lưng
+player.add(bx(.8,.3,.52,0x1565c0,0,.78,0)); player.add(bx(.82,.06,.54,0x0d47a1,0,.94,0));   // quần đùi + cạp
 const head=new THREE.Mesh(new THREE.SphereGeometry(.4,8,6),skin); head.position.y=1.85; player.add(head);
 for(const x of [-.4,.4]){const e=new THREE.Mesh(new THREE.SphereGeometry(.1,5,4),skin);e.position.set(x,1.83,0);player.add(e);}
 const ns=new THREE.Mesh(new THREE.ConeGeometry(.08,.14,4),skin); ns.rotation.x=-1.5; ns.position.set(0,1.8,-.4); player.add(ns);
-player.add(bx(.72,.13,.06,0x000000,0,1.9,-.36));                    // kính đen
-player.add(bx(.26,.05,.04,0xffffff,0,1.68,-.38));                   // cười nhăn răng
-for(let i=0;i<16;i++){const c=new THREE.Mesh(new THREE.ConeGeometry(.1,.38,4),L(0xffc107));                // tóc nhuộm vàng dựng đứng
-  const a=Math.random()*6.28, r=Math.random()*.28; c.position.set(Math.cos(a)*r,2.2+Math.random()*.08,Math.sin(a)*r);
-  c.rotation.set(Math.sin(a)*.6,0,-Math.cos(a)*.6); player.add(c);}
-const chain=new THREE.Mesh(new THREE.TorusGeometry(.27,.03,5,10),L(0xffd600)); chain.rotation.x=1.35; chain.position.set(0,1.45,-.02); player.add(chain);
-function armP(x){return limbP(x,1.42,[[BG(.3,.28,.3),L(0xd32f2f),-.14],[BG(.2,.4,.2),skin,-.45],[BG(.23,.07,.23),L(0xffffff),-.62],[new THREE.IcosahedronGeometry(.12,0),skin,-.72]]);}
-function legP(x){return limbP(x,.78,[[BG(.38,.42,.38),L(0x1565c0),-.21],[BG(.22,.3,.22),skin,-.55],[BG(.3,.09,.44),L(0xfdd835),-.72,-.05]]);}
+for(const x of [-.14,.14]){player.add(bx(.11,.08,.04,0xffffff,x,1.9,-.37)); player.add(bx(.05,.06,.045,0,x,1.9,-.38));}
+player.add(bx(.26,.05,.04,0xffffff,0,1.68,-.38));
+const hairM=L(0x0a0a0a);                                              // tóc đen, mái xéo
+const cap=new THREE.Mesh(new THREE.SphereGeometry(.44,8,6,0,Math.PI*2,0,Math.PI*.5),hairM); cap.position.set(0,1.87,.03); cap.rotation.x=.55; player.add(cap);
+const fr=bx(.62,.14,.2,0x0a0a0a,.06,2.13,-.3); fr.rotation.z=-.38; player.add(fr);
+const fr2=bx(.36,.12,.16,0x0a0a0a,.2,2.0,-.36); fr2.rotation.z=-.65; player.add(fr2);
+player.add(bx(.7,.3,.12,0x0a0a0a,0,1.98,.36));
+function armP(x){return limbP(x,1.42,[[BG(.22,.42,.22),skin,-.21],[BG(.2,.38,.2),skin,-.58],[new THREE.IcosahedronGeometry(.12,0),skin,-.8]]);}
+function legP(x){return limbP(x,.78,[[BG(.4,.44,.4),L(0x1565c0),-.22],[BG(.22,.3,.22),skin,-.58],[BG(.26,.08,.4),skin,-.75,-.05]]);}   // chân đất
 lim.armL=armP(-.55); lim.armR=armP(.55); lim.legL=legP(-.2); lim.legR=legP(.2);
 scene.add(player);
 
@@ -305,16 +312,34 @@ const boneFly=boneMesh(); boneFly.visible=false; boneFly.scale.set(1.3,1.3,1.3);
 let bfv=0;
 
 /* ================= LOGIC ================= */
-const LANES=[-2,0,2], SPD0=.15, SPDMAX=.36;
+const LANES=[-2,0,2], SPD0=.15, SPDMAX=.36, DY=110;
 let lane=1,y=0,vy=0,floorY=0,speed=SPD0,score=0,alive=false,items=[],timer=0,gap=4,shake=0,t=0,jaw=0,
-    duckT=0,dying=0,stepS=0,breathT=0,pantT=0,barkT=200,growlT=150,poolS=0,wasAir=false;
+    duckT=0,dying=0,dyk=0,stepS=0,breathT=0,pantT=0,barkT=200,growlT=150,poolS=0,wasAir=false,showoff=false,chewT=0,
+    cx=0,cy=3.6,cz=6.5,lx=0,ly=1.2,lz=-6;
 function cast(g){g.traverse(o=>{if(o.isMesh)o.castShadow=true;});}
 road.receiveShadow=true; field.receiveShadow=true; cast(player); cast(dog);
-function wheel(r,x,y,z){const w=cyl(r,r,.2,0x212121,x,y,z,10);w.rotation.z=Math.PI/2;return w;}
+mouthBone.scale.set(1.5,1.5,1.5);
+/* đống xương người (hoạt hình) */
+const pile=new THREE.Group(); pile.visible=false; scene.add(pile);
+{const bm=0xf3ecd6; const sk=new THREE.Mesh(new THREE.SphereGeometry(.22,7,6),L(bm)); sk.position.set(.15,.22,0); pile.add(sk);
+ pile.add(bx(.22,.1,.2,bm,.15,.08,-.1)); pile.add(bx(.06,.07,.03,0x111111,.08,.25,-.2)); pile.add(bx(.06,.07,.03,0x111111,.22,.25,-.2));
+ for(let i=0;i<5;i++){const r=new THREE.Mesh(new THREE.TorusGeometry(.3-i*.02,.028,4,8,Math.PI),L(bm)); r.rotation.y=Math.PI/2; r.position.set(-.75+i*.13,.03,.1); pile.add(r);}
+ const sp=cyl(.03,.03,.7,bm,-.45,.03,.1,5); sp.rotation.z=Math.PI/2; pile.add(sp);
+ for(const [a,z] of [[.5,.55],[-.4,-.5]]){const b=boneMesh(); b.scale.set(1.3,1.3,1.3); b.rotation.y=a; b.position.set(0,.1,z); pile.add(b);}}
+function wheel(r,x,y,z,w){const m=cyl(r,r,w||.2,0x212121,x,y,z,10);m.rotation.z=Math.PI/2;return m;}
+const HT={fence:.7,buffalo:1.7,pit:.35,log:.65,rock:.95,moto:1.3};
 function mk(type,l){
-  const g=new THREE.Group(); let hz=.6, top=0;
+  const g=new THREE.Group(); let hz=.6, top=0, solid=false;
   if(type==='fence'){for(const x of [-.8,0,.8])g.add(bx(.12,.9,.12,0x8d6e63,x,.45,0)); g.add(bx(1.8,.12,.08,0xa1785c,0,.35,0)); g.add(bx(1.8,.12,.08,0xa1785c,0,.68,0)); hz=.3;}
   else if(type==='buffalo'){g.add(buffaloMesh()); hz=1.1;}
+  else if(type==='log'){const c=cyl(.3,.3,2,0x6d4c41,0,.32,0,8); c.rotation.z=Math.PI/2; g.add(c);
+    for(const x of [-1.01,1.01]){const e=cyl(.27,.27,.03,0xd7b98a,x,.32,0,8); e.rotation.z=Math.PI/2; g.add(e);} hz=.35;}
+  else if(type==='rock'){[[0,.45,0,.6],[.55,.3,.2,.4],[-.55,.28,-.1,.38]].forEach((a,i)=>{const r=new THREE.Mesh(new THREE.IcosahedronGeometry(a[3],0),L(i?0x8d949b:0x78808a));r.position.set(a[0],a[1],a[2]);g.add(r);}); hz=.7;}
+  else if(type==='moto'){g.add(wheel(.36,0,.36,-.7,.14)); g.add(wheel(.36,0,.36,.7,.14)); g.add(bx(.3,.35,1.2,0xd32f2f,0,.75,0)); g.add(bx(.32,.12,.6,0x212121,0,1.0,.3));
+    g.add(bx(.7,.06,.06,0x424242,0,1.25,-.55)); g.add(bx(.2,.2,.15,0xfff59d,0,1.0,-.7)); g.add(bx(.06,.6,.06,0x9e9e9e,0,.85,-.6)); hz=.95;}
+  else if(type==='tractor'){g.add(bx(1.4,.8,2.2,0x2e7d32,0,1.2,0)); g.add(bx(1,.4,.9,0x388e3c,0,1.7,-.7)); g.add(bx(.5,.15,.4,0x212121,0,1.7,.55));
+    g.add(wheel(.7,-.95,.7,.6,.35)); g.add(wheel(.7,.95,.7,.6,.35)); g.add(wheel(.4,-.8,.4,-.8,.25)); g.add(wheel(.4,.8,.4,-.8,.25));
+    g.add(cyl(.05,.05,1,0x212121,.4,2.2,-.9,5)); g.add(bx(.3,.15,.06,0xfff59d,-.3,1.3,-1.12)); g.add(bx(.3,.15,.06,0xfff59d,.3,1.3,-1.12)); hz=1.5; top=1.7;}
   else if(type==='truck'){g.add(bx(1.7,.3,3.6,0x455a64,0,.6,0)); g.add(bx(1.7,1.2,2.3,0x8d6e63,0,1.3,.6));
     for(let i=0;i<4;i++)g.add(bx(.7,.4,.6,0xf5f0dc,i%2?.42:-.42,2.1,i<2?.1:1.1));
     g.add(bx(1.6,1.3,1.1,0x2e7d32,0,1.25,-1.4)); g.add(bx(1.4,.5,.06,0x81d4fa,0,1.6,-1.96));
@@ -326,45 +351,53 @@ function mk(type,l){
     g.add(bx(2.4,.1,.3,0x795548,0,.06,-1.6)); g.add(bx(2.4,.1,.3,0x795548,0,.06,1.6)); hz=1.5;}
   else if(type==='gate'){for(const x of [-1.1,1.1])g.add(cyl(.09,.11,1.9,0x9ccc65,x,.95,0,6));
     const beam=cyl(.09,.09,2.4,0x7cb342,0,1.85,0,6); beam.rotation.z=Math.PI/2; g.add(beam); g.add(bx(1.4,.35,.04,0xd32f2f,0,1.6,0)); hz=.4;}
-  cast(g); g.position.set(LANES[l],0,-80); scene.add(g); items.push({m:g,type,hz,top});
+  else if(type==='tree'){g.add(cyl(.32,.45,3.2,0x6d4c41,0,1.6,0,7)); const cs=[0x2e7d32,0x388e3c,0x43a047,0x66bb6a];
+    [[0,4,0,1.5],[.6,4.8,.2,1.1],[-.6,4.7,-.2,1.1],[0,5.6,0,.9]].forEach((a,i)=>{const b=new THREE.Mesh(new THREE.IcosahedronGeometry(a[3],0),L(cs[i]));b.position.set(a[0],a[1],a[2]);g.add(b);});
+    hz=.75; solid=true;}
+  cast(g); g.position.set(LANES[l],0,-80); scene.add(g); items.push({m:g,type,hz,top,solid});
 }
-const OB=['fence','buffalo','truck','truck','haycart','pit','gate'];
+const OB=['fence','log','rock','moto','buffalo','truck','haycart','tractor','pit','gate','tree','tree'];
 function spawn(){
   const lv=Math.min(1,(speed-SPD0)/(SPDMAX-SPD0)), l=Math.floor(Math.random()*3);
   mk(OB[Math.floor(Math.random()*OB.length)],l);
-  if(Math.random()<.1+lv*.3)mk(OB[Math.floor(Math.random()*OB.length)],(l+1+Math.floor(Math.random()*2))%3);
+  if(Math.random()<.15+lv*.35)mk(OB[Math.floor(Math.random()*OB.length)],(l+1+Math.floor(Math.random()*2))%3);
 }
 function reset(){
   items.forEach(o=>scene.remove(o.m)); items=[];
-  lane=1;y=0;vy=0;floorY=0;speed=SPD0;score=0;timer=0;gap=4;shake=0;duckT=0;dying=0;alive=true;wasAir=false;
-  player.position.set(0,0,0);player.rotation.set(0,0,0);player.scale.y=1;dog.position.set(0,0,4);dog.rotation.y=0;mouthBone.visible=false;
+  lane=1;y=0;vy=0;floorY=0;speed=SPD0;score=0;timer=0;gap=4;shake=0;duckT=0;dying=0;alive=true;wasAir=false;showoff=false;overMode=false;
+  $('msg').classList.remove('over');
+  player.position.set(0,0,0);player.rotation.set(0,0,0);player.scale.y=1;player.visible=true;
+  dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;mouthBone.visible=false;pile.visible=false;
   drops.forEach(d=>d.m.visible=false); pool.visible=false; boneFly.visible=false; $('blood').style.opacity=0;
+  cx=0;cy=3.6;cz=6.5;lx=0;ly=1.2;lz=-6;
 }
 function end(type){
-  alive=false; dying=140;
+  alive=false; dying=DY;
   if(type==='pit')sfx.splash(); else sfx.crash();
   sfx.scream(); sfx.growl(); sfx.bark();
 }
 function bloodBurst(){
   drops.forEach(d=>{d.m.position.set(player.position.x,player.position.y+.6+Math.random()*.8,.2); d.vx=(Math.random()-.5)*.14; d.vy=.06+Math.random()*.12; d.vz=(Math.random()-.3)*.14; d.m.visible=true;});
-  pool.position.set(player.position.x,.05,.2); pool.visible=true; poolS=0; $('blood').style.opacity=.85;
+  pool.position.set(player.position.x,.05,.2); pool.visible=true; poolS=0; $('blood').style.opacity=.6;
 }
 function showOver(){
   if(score>best){best=Math.floor(score);try{localStorage.setItem('best_'+NAME,best)}catch(e){}}
-  $('res').innerHTML='Chó cắn rồi!<br><span style="color:#b71c1c;font-size:20px">'+NAME+' gà quá!</span><br><small>Điểm: '+Math.floor(score)+'</small>';
-  $('best').textContent='Điểm cao: '+best; $('go').textContent='↻ Chơi lại'; view('vMain'); $('msg').style.display='flex'; sfx.over();
+  $('res').innerHTML='Chó cắn rồi! <b style="color:#b71c1c">'+NAME+' gà quá!</b> &nbsp;Điểm: '+Math.floor(score);
+  $('best').textContent='Điểm cao: '+best; $('go').textContent='↻ Chơi lại'; overMode=true; view('vMain'); $('msg').style.display='flex'; sfx.over();
 }
 const left=()=>{if(alive&&lane>0)lane--}, right=()=>{if(alive&&lane<2)lane++};
 const jump=()=>{if(alive&&y<=floorY+.01){vy=.34;sfx.jump();}};
 const duck=()=>{if(!alive)return; if(y>floorY+.01)vy=-.4; else if(duckT===0){duckT=45;sfx.swoosh();}};
 addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT'){if(e.key==='Enter')$('ok').click();return;}
+  if(e.key==='m'||e.key==='M')$('mute').click();
   if(e.key==='ArrowLeft'||e.key==='a')left();
   if(e.key==='ArrowRight'||e.key==='d')right();
   if(['ArrowUp',' ','w'].includes(e.key)){e.preventDefault();jump();}
   if(e.key==='ArrowDown'||e.key==='s'){e.preventDefault();duck();}
 });
 $('bl').onclick=left; $('brt').onclick=right; $('bj').onclick=jump; $('bd').onclick=duck;
+$('pad').style.display='none'; $('mute').style.display='none';   // màn hình chỉ có tên + điểm (M = tắt tiếng)
 let tx,ty;
 wrap.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY;});
 wrap.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;
@@ -374,32 +407,39 @@ $('go').onclick=()=>{if(!NAME){view('vName');return;} ac(); if(AC.state==='suspe
 
 function loop(){
   requestAnimationFrame(loop); t+=.016;
-  const mv=alive?speed:(dying>0?0:.09);
+  const mv=alive?speed:((dying>0||showoff)?0:.09);
   if(dying>0){
-    const k=140-dying; dying--; shake=k>25?5:0;
+    const k=DY-dying; dying--; dyk=k; shake=(k>25&&k<60)?5:0;
     if(k<25){dog.position.z+=(.4-dog.position.z)*.2; dog.position.x+=(player.position.x-dog.position.x)*.2; dog.position.y=floorY+Math.sin(k/25*Math.PI)*.9; jaw=.7;}
-    else{ dog.position.set(player.position.x,floorY+.1+Math.abs(Math.sin(k*.6))*.12,.4); dog.rotation.y=Math.sin(k*1.2)*.3; jaw=Math.sin(k*1.5)>0?.6:.05;
-      player.rotation.x+=(-1.45-player.rotation.x)*.12; player.position.y=floorY+.18; player.scale.y=1; }
+    else if(k<62){dog.position.set(player.position.x,floorY+.1+Math.abs(Math.sin(k*.6))*.12,.4); dog.rotation.y=Math.sin(k*1.2)*.3; jaw=Math.sin(k*1.5)>0?.6:.05;
+      player.rotation.x+=(-1.45-player.rotation.x)*.12; player.position.y=floorY+.18; player.scale.y=1;}
+    else{dog.position.x+=(0-dog.position.x)*.06; dog.position.z+=(2.3-dog.position.z)*.06; dog.position.y+=(0-dog.position.y)*.1;
+      dog.rotation.y+=(Math.PI-dog.rotation.y)*.08; dhead.rotation.x+=(.45-dhead.rotation.x)*.1; jaw=.15;}
     if(k===25){bloodBurst(); sfx.bite(); sfx.scream(); sfx.growl();}
-    if(k===45){boneFly.position.set(player.position.x,floorY+.6,.2); boneFly.visible=true; bfv=.16; sfx.crash();}
-    if(k>45&&k<70&&boneFly.visible){boneFly.position.y+=bfv; bfv-=.012; boneFly.position.z-=.02; boneFly.rotation.z+=.3;}
-    if(k===70){boneFly.visible=false; mouthBone.visible=true; sfx.bark();}
-    if(k>75&&k%16===0)sfx.chomp();
+    if(k===55){player.visible=false; pile.position.set(player.position.x,.05,.2); pile.visible=true; sfx.crash();}
+    if(k===62){mouthBone.visible=true; sfx.bark();}
+    if(k>30&&k%16===0)sfx.chomp();
     if(k>25&&poolS<1.6){poolS+=.03; pool.scale.set(poolS,poolS*1.3,1);}
-    if(dying===0)showOver();
+    if(dying===0){showoff=true; showOver();}
+  } else if(showoff){
+    // chó ngậm xương người, khoe giữa màn hình
+    dog.position.x*=.9; dog.position.z+=(2.3-dog.position.z)*.1; dog.position.y=Math.abs(Math.sin(t*5))*.22;
+    dog.rotation.y=Math.PI+Math.sin(t*1.6)*.5; dhead.rotation.x=.45+Math.sin(t*5)*.08; jaw=.12+Math.abs(Math.sin(t*9))*.1;
+    tail.rotation.z=Math.sin(t*22)*.6; if(++chewT%26===0)sfx.chomp();
   } else if(alive){
     speed=Math.min(SPDMAX,speed+.00003); score+=speed*.25; timer++;
-    if(timer%Math.max(28,Math.floor(70-(speed-SPD0)*150))===0)spawn();
+    if(timer%Math.max(26,Math.floor(64-(speed-SPD0)*150))===0)spawn();
     player.position.x+=(LANES[lane]-player.position.x)*.2; player.rotation.z=(player.position.x-LANES[lane])*.18;
-    // vật cản: va chạm + nóc xe chạy được
     let floor=0, dead=null;
     for(let i=items.length-1;i>=0;i--){
       const o=items[i]; o.m.position.z+=speed*2;
-      if(!o.snd&&o.m.position.z>-42){o.snd=1; if(o.type==='truck')sfx.horn(); else if(o.type==='buffalo')sfx.moo(); else if(o.type==='haycart')sfx.creak();}
+      if(!o.snd&&o.m.position.z>-42){o.snd=1; if(o.type==='truck')sfx.horn(); else if(o.type==='buffalo')sfx.moo(); else if(o.type==='haycart')sfx.creak();
+        else if(o.type==='tractor')sfx.engine(); else if(o.type==='moto')sfx.moto();}
       const dz=Math.abs(o.m.position.z-player.position.z), dx=Math.abs(o.m.position.x-player.position.x);
       if(dx<.9&&dz<o.hz+.35){
         if(o.top){ if(y>=o.top-.35)floor=Math.max(floor,o.top); else dead=o; }
-        else{ const bad=o.type==='fence'?y<.7:o.type==='buffalo'?y<1.7:o.type==='pit'?y<.35:(y<2.0&&(duckT===0||y>.01)); if(bad)dead=o; }
+        else if(o.solid)dead=o;                                        // cây: không nhảy/trượt qua được
+        else{ const bad=o.type==='gate'?(y<2.0&&(duckT===0||y>.01)):y<HT[o.type]; if(bad)dead=o; }
       }
       if(o.m.position.z>12){scene.remove(o.m);items.splice(i,1);}
     }
@@ -417,17 +457,17 @@ function loop(){
     pantT++; if(pantT>=60){pantT=0;sfx.pant();}
     if(--barkT<=0){barkT=200+Math.random()*220;sfx.bark();}
     if(--growlT<=0){growlT=260+Math.random()*200;sfx.growl();}
-    $('s').textContent=Math.floor(score); $('lv').textContent=Math.floor((speed-SPD0)/.03)+1;
+    $('s').textContent=Math.floor(score);
   }
   const cyc=t*(9+mv*12), air=alive&&y>floorY+.02;
-  if(dying===0){
+  if(dying===0&&!showoff){
     lim.legL.rotation.x=air?.5:Math.sin(cyc)*.9; lim.legR.rotation.x=air?-.5:-Math.sin(cyc)*.9;
     lim.armL.rotation.x=air?-2.5:-Math.sin(cyc)*.9; lim.armR.rotation.x=air?-2.5:Math.sin(cyc)*.9;
-    dl.forEach((q,i)=>q.rotation.x=Math.sin(cyc*1.3+(i%2?Math.PI:0))*.9);
     if(!alive)dog.position.set(0,Math.abs(Math.sin(cyc*1.3))*.1,3.6); else dog.position.y=Math.abs(Math.sin(cyc*1.3))*.12;
     if(alive){const sg=Math.sign(Math.sin(cyc)); if(sg!==stepS&&!air&&duckT===0){stepS=sg; if(floorY>0)sfx.stepTop(); else sfx.step();}}
     jaw*=.86;
   }
+  if(dying===0&&!showoff||showoff||dyk>=62)dl.forEach((q,i)=>q.rotation.x=Math.sin(cyc*1.3+(i%2?Math.PI:0))*(showoff||dying>0?.35:.9));
   jawG.rotation.x=-jaw;
   drops.forEach(d=>{if(!d.m.visible)return; d.vy-=.006; d.m.position.x+=d.vx; d.m.position.y+=d.vy; d.m.position.z+=d.vz;
     if(d.m.position.y<.06){d.m.position.y=.06;d.vx=d.vy=d.vz=0;}});
@@ -438,8 +478,13 @@ function loop(){
   birds.forEach(b=>{const u=b.userData; b.position.x+=u.dir*u.sp*1.2; if(b.position.x>60)b.position.x=-60; if(b.position.x<-60)b.position.x=60;
     const f=Math.sin(t*14+u.ph)*.7; u.wl.rotation.z=f; u.wr.rotation.z=-f; b.position.y+=Math.sin(t*2+u.ph)*.005;});
   clouds.forEach(c=>{c.position.x+=.03; if(c.position.x>80)c.position.x=-80;});
+  // camera: bình thường bám người chơi, khi chết zoom vào con chó
+  const zoom=showoff||(dying>0&&dyk>=62), r=(showoff||dying>0)?.05:.35;
+  const tcx=zoom?0:player.position.x*.4, tcy=zoom?1.9:3.6+player.position.y*.35, tcz=zoom?5.6:6.5,
+        tlx=zoom?0:player.position.x*.2, tly=zoom?.75:1.2+player.position.y*.3, tlz=zoom?2.3:-6;
+  cx+=(tcx-cx)*r; cy+=(tcy-cy)*r; cz+=(tcz-cz)*r; lx+=(tlx-lx)*r; ly+=(tly-ly)*r; lz+=(tlz-lz)*r;
   const sh=shake>0?(shake--,(Math.random()-.5)*.3):0;
-  cam.position.set(player.position.x*.4+sh,3.6+player.position.y*.35+sh,6.5); cam.lookAt(player.position.x*.2,1.2+player.position.y*.3,-6);
+  cam.position.set(cx+sh,cy+sh,cz); cam.lookAt(lx,ly,lz);
   renderer.render(scene,cam);
 }
 loop();
