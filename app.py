@@ -39,11 +39,11 @@ GAME_HTML = r"""
   #wrap{touch-action:none}
   #joy{position:absolute;left:18px;bottom:24px;width:130px;height:130px;border-radius:50%;background:rgba(232,201,154,.35);border:4px solid rgba(46,29,14,.7);display:none;touch-action:none}
   #knob{position:absolute;left:35px;top:35px;width:60px;height:60px;border-radius:50%;background:#8d6e3f;border:4px solid #2e1d0e}
+  #wrap.full{max-width:none;width:100vw;height:100vh;aspect-ratio:auto;margin:0}
 </style>
 <div id="wrap">
   <div id="hud"><span id="n">?</span> &nbsp;|&nbsp; <span id="s">0</span></div>
   <div id="blood"></div>
-  <div id="joy"><div id="knob"></div></div>
   <div id="cap"></div><div id="skip">Space / chạm: bỏ qua</div>
   <button id="mute">🔊</button>
   <div id="msg"><div id="card">
@@ -463,24 +463,24 @@ addEventListener('keydown',e=>{
 });
 $('bl').onclick=left; $('brt').onclick=right; $('bj').onclick=jump; $('bd').onclick=duck;
 $('pad').style.display='none'; $('mute').style.display='none';
-/* ---- điện thoại: joystick ảo (trái/phải đổi làn, lên nhảy, xuống cúi) ---- */
+/* ---- điện thoại: vuốt màn hình (trái/phải đổi làn, lên nhảy, xuống cúi) ---- */
 const IS_TOUCH=('ontouchstart' in window)||navigator.maxTouchPoints>0;
-const joy=$('joy'), knob=$('knob'); let jid=null, jf={x:0,y:0}, jc={x:0,y:0};
-function joyMove(t){
-  const dx=t.clientX-jc.x, dy=t.clientY-jc.y, m=Math.min(1,Math.hypot(dx,dy)/45), a=Math.atan2(dy,dx);
-  knob.style.transform='translate('+Math.cos(a)*m*40+'px,'+Math.sin(a)*m*40+'px)';
-  if(dx>32){if(!jf.x){right();jf.x=1;}} else if(dx<-32){if(!jf.x){left();jf.x=1;}} else jf.x=0;
-  if(dy<-32){if(!jf.y){jump();jf.y=1;}} else if(dy>32){if(!jf.y){duck();jf.y=1;}} else jf.y=0;
+let tx=0,ty=0;
+wrap.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY;},{passive:true});
+wrap.addEventListener('touchmove',e=>{
+  const x=e.touches[0].clientX,y=e.touches[0].clientY,dx=x-tx,dy=y-ty;
+  if(Math.abs(dx)>26||Math.abs(dy)>26){
+    if(Math.abs(dx)>Math.abs(dy)){if(dx>0)right();else left();} else {if(dy<0)jump();else duck();}
+    tx=x; ty=y;
+  }
+},{passive:true});
+function goFull(){                                   // điện thoại: toàn màn hình + xoay ngang (nếu máy hỗ trợ)
+  if(!IS_TOUCH)return;
+  try{const f=wrap.requestFullscreen||wrap.webkitRequestFullscreen;
+    if(f&&!document.fullscreenElement){const pr=f.call(wrap); if(pr&&pr.then)pr.then(()=>{try{screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}).catch(()=>{});}
+  }catch(e){}
 }
-joy.addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation(); const r=joy.getBoundingClientRect(); jc={x:r.left+r.width/2,y:r.top+r.height/2}; jid=e.changedTouches[0].identifier; joyMove(e.changedTouches[0]);},{passive:false});
-joy.addEventListener('touchmove',e=>{e.preventDefault();e.stopPropagation(); for(const t of e.changedTouches)if(t.identifier===jid)joyMove(t);},{passive:false});
-const joyEnd=e=>{e.stopPropagation(); jid=null; jf={x:0,y:0}; knob.style.transform='translate(0,0)';};
-joy.addEventListener('touchend',joyEnd); joy.addEventListener('touchcancel',joyEnd);   // màn hình chỉ có tên + điểm (M = tắt tiếng)
-let tx,ty;
-wrap.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY;});
-wrap.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;
-  if(Math.abs(dx)>Math.abs(dy)){if(dx>30)right();else if(dx<-30)left();} else if(dy<-30)jump(); else if(dy>30)duck();});
-$('go').onclick=()=>{if(!NAME){view('vName');return;} ac(); if(AC.state==='suspended')AC.resume(); ambWanted=true; ambience(true);
+$('go').onclick=()=>{if(!NAME){view('vName');return;} goFull(); ac(); if(AC.state==='suspended')AC.resume(); ambWanted=true; ambience(true);
   $('msg').style.display='none'; startIntro();};
 
 /* ---------- ANIMATION MỞ ĐẦU: chọc chó -> chó dậy -> bị đuổi ---------- */
@@ -530,7 +530,6 @@ wrap.addEventListener('click',()=>{if(introT>0)endIntro();});
 
 function loop(){
   requestAnimationFrame(loop); t+=.016;
-  if(IS_TOUCH){const sj=(alive||introT>0)?'block':'none'; if(joy.style.display!==sj)joy.style.display=sj;}
   const mv=introT>0?introMv:(alive?speed:((dying>0||showoff)?0:.09));
   if(introT>0){introStep();}
   else if(dying>0){
@@ -609,15 +608,21 @@ function loop(){
         tlx=IN?-.6:(zoom?0:player.position.x*.2), tly=IN?1:(zoom?.75:1.2+player.position.y*.3), tlz=IN?0:(zoom?2.3:-6);
   cx+=(tcx-cx)*r; cy+=(tcy-cy)*r; cz+=(tcz-cz)*r; lx+=(tlx-lx)*r; ly+=(tly-ly)*r; lz+=(tlz-lz)*r;
   const sh=shake>0?(shake--,(Math.random()-.5)*.3):0;
-  cam.position.set(cx+sh,cy+sh,cz); cam.lookAt(lx,ly,lz);
+  cam.position.set(cx+sh,cy+sh+(cam.aspect<1?1:0),cz+(cam.aspect<1?2.6:0)); cam.lookAt(lx,ly,lz);
   renderer.render(scene,cam);
 }
 loop();
-function fit(){                                   // khung game luôn 16:9
-  try{window.frameElement.style.height=(Math.round(wrap.getBoundingClientRect().height)+4)+'px';}catch(e){}
-  renderer.setSize(W(),H()); cam.aspect=W()/H(); cam.updateProjectionMatrix();
-  $('card').style.transform='scale('+Math.min(1,H()/520)+')';
+function fit(){
+  const fs=document.fullscreenElement===wrap||document.webkitFullscreenElement===wrap;
+  let ph=innerHeight; try{ph=window.parent.innerHeight||ph}catch(e){}
+  const tall=IS_TOUCH&&!fs&&innerWidth<700;               // điện thoại cầm dọc: khung cao lấp đầy màn hình
+  wrap.classList.toggle('full',fs);
+  wrap.style.aspectRatio=tall?'auto':''; wrap.style.height=tall?Math.round(Math.min(ph-60,innerWidth*1.9))+'px':'';
+  try{ if(!fs)window.frameElement.style.height=(Math.round(wrap.getBoundingClientRect().height)+4)+'px'; }catch(e){}
+  renderer.setSize(W(),H()); cam.aspect=W()/H(); cam.fov=cam.aspect<1?82:72; cam.updateProjectionMatrix();
+  $('card').style.transform='scale('+Math.min(1,H()/520,W()/380)+')';
 }
+document.addEventListener('fullscreenchange',()=>fit()); document.addEventListener('webkitfullscreenchange',()=>fit());
 fit(); addEventListener('resize',fit);
 </script>
 """
