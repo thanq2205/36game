@@ -36,10 +36,14 @@ GAME_HTML = r"""
        font-weight:bold;font-size:20px;padding:8px 18px;box-shadow:0 5px 0 #2e1d0e;white-space:nowrap}
   #skip{position:absolute;right:12px;bottom:8px;display:none;color:#fff;font-size:13px;font-weight:bold;text-shadow:1px 1px 0 #000}
   #mn{display:none} #msg.over #mn{display:inline-block} #msg.over #bg, #msg.over #br2{display:none}
+  #wrap{touch-action:none}
+  #joy{position:absolute;left:18px;bottom:24px;width:130px;height:130px;border-radius:50%;background:rgba(232,201,154,.35);border:4px solid rgba(46,29,14,.7);display:none;touch-action:none}
+  #knob{position:absolute;left:35px;top:35px;width:60px;height:60px;border-radius:50%;background:#8d6e3f;border:4px solid #2e1d0e}
 </style>
 <div id="wrap">
   <div id="hud"><span id="n">?</span> &nbsp;|&nbsp; <span id="s">0</span></div>
   <div id="blood"></div>
+  <div id="joy"><div id="knob"></div></div>
   <div id="cap"></div><div id="skip">Space / chạm: bỏ qua</div>
   <button id="mute">🔊</button>
   <div id="msg"><div id="card">
@@ -458,7 +462,20 @@ addEventListener('keydown',e=>{
   if(e.key==='ArrowDown'||e.key==='s'){e.preventDefault();duck();}
 });
 $('bl').onclick=left; $('brt').onclick=right; $('bj').onclick=jump; $('bd').onclick=duck;
-$('pad').style.display='none'; $('mute').style.display='none';   // màn hình chỉ có tên + điểm (M = tắt tiếng)
+$('pad').style.display='none'; $('mute').style.display='none';
+/* ---- điện thoại: joystick ảo (trái/phải đổi làn, lên nhảy, xuống cúi) ---- */
+const IS_TOUCH=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+const joy=$('joy'), knob=$('knob'); let jid=null, jf={x:0,y:0}, jc={x:0,y:0};
+function joyMove(t){
+  const dx=t.clientX-jc.x, dy=t.clientY-jc.y, m=Math.min(1,Math.hypot(dx,dy)/45), a=Math.atan2(dy,dx);
+  knob.style.transform='translate('+Math.cos(a)*m*40+'px,'+Math.sin(a)*m*40+'px)';
+  if(dx>32){if(!jf.x){right();jf.x=1;}} else if(dx<-32){if(!jf.x){left();jf.x=1;}} else jf.x=0;
+  if(dy<-32){if(!jf.y){jump();jf.y=1;}} else if(dy>32){if(!jf.y){duck();jf.y=1;}} else jf.y=0;
+}
+joy.addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation(); const r=joy.getBoundingClientRect(); jc={x:r.left+r.width/2,y:r.top+r.height/2}; jid=e.changedTouches[0].identifier; joyMove(e.changedTouches[0]);},{passive:false});
+joy.addEventListener('touchmove',e=>{e.preventDefault();e.stopPropagation(); for(const t of e.changedTouches)if(t.identifier===jid)joyMove(t);},{passive:false});
+const joyEnd=e=>{e.stopPropagation(); jid=null; jf={x:0,y:0}; knob.style.transform='translate(0,0)';};
+joy.addEventListener('touchend',joyEnd); joy.addEventListener('touchcancel',joyEnd);   // màn hình chỉ có tên + điểm (M = tắt tiếng)
 let tx,ty;
 wrap.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY;});
 wrap.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;
@@ -513,6 +530,7 @@ wrap.addEventListener('click',()=>{if(introT>0)endIntro();});
 
 function loop(){
   requestAnimationFrame(loop); t+=.016;
+  if(IS_TOUCH){const sj=(alive||introT>0)?'block':'none'; if(joy.style.display!==sj)joy.style.display=sj;}
   const mv=introT>0?introMv:(alive?speed:((dying>0||showoff)?0:.09));
   if(introT>0){introStep();}
   else if(dying>0){
