@@ -7,7 +7,7 @@ st.markdown("<h3 style='text-align:center'>🐕 CHỌC CHÓ 🐕</h3>", unsafe_a
 GAME_HTML = r"""
 <style>
   html,body{margin:0;background:#8fd0ff;overflow:hidden;font-family:'Courier New',monospace}
-  #wrap{position:relative;width:100%;height:660px;overflow:hidden}
+  #wrap{position:relative;width:100%;max-width:1280px;aspect-ratio:16/9;margin:0 auto;overflow:hidden}
   canvas{display:block;width:100%;height:100%;filter:saturate(1.4) contrast(1.12)}
   #hud{position:absolute;top:10px;left:12px;background:#e8c99a;color:#3d2712;font-weight:bold;padding:6px 12px;font-size:15px;
        border:4px solid #5b3a1e;box-shadow:0 4px 0 #2e1d0e}
@@ -613,8 +613,13 @@ function loop(){
   renderer.render(scene,cam);
 }
 loop();
-addEventListener('resize',()=>{renderer.setSize(W(),H());cam.aspect=W()/H();cam.updateProjectionMatrix();});
+function fit(){                                   // khung game luôn 16:9
+  try{window.frameElement.style.height=(Math.round(wrap.getBoundingClientRect().height)+4)+'px';}catch(e){}
+  renderer.setSize(W(),H()); cam.aspect=W()/H(); cam.updateProjectionMatrix();
+  $('card').style.transform='scale('+Math.min(1,H()/520)+')';
+}
+fit(); addEventListener('resize',fit);
 </script>
 """
 
-components.html(GAME_HTML, height=680, scrolling=False)
+components.html(GAME_HTML, height=724, scrolling=False)
