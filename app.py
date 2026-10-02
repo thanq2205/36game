@@ -1,5 +1,7 @@
+import hmac
 import json
 import os
+import time
 from pathlib import Path
 
 import requests
@@ -48,6 +50,14 @@ GAME_HTML = r"""
   #rank{max-height:300px;overflow:auto;font-weight:bold;font-size:14px;margin:6px 0}
   #rank table{width:100%;border-collapse:collapse} #rank td{padding:4px 6px;border-bottom:2px dashed #b08b5a;text-align:left}
   #rank td:first-child{width:34px} #rank td:last-child{text-align:right} #rank tr.me{background:#f5d98a}
+  #vDev,#vDevLogin{text-align:left} #vDev{max-height:440px;overflow:auto} #card.wide{width:440px}
+  #dpw,#dname,#dscore{width:100%;box-sizing:border-box;font-family:inherit;font-size:15px;font-weight:bold;padding:6px;border:3px solid #2e1d0e;background:#fff3d6;margin:4px 0}
+  .btn.sm{display:inline-block;width:auto;font-size:13px;padding:6px 10px;margin:4px 3px;border-width:3px;box-shadow:0 3px 0 #2e1d0e}
+  .dsec{font-weight:bold;color:#7a2e0e;margin:10px 0 4px;border-bottom:3px solid #5b3a1e;font-size:13px}
+  .dmsg{font-size:13px;font-weight:bold;color:#b71c1c;min-height:16px}
+  .drow{display:flex;justify-content:space-between;font-size:13px;font-weight:bold;padding:2px 0;border-bottom:1px dashed #b08b5a}
+  .drow button{border:2px solid #2e1d0e;background:#c62828;color:#fff;cursor:pointer;font-weight:bold}
+  #dv{background:#555;font-size:13px;padding:6px;margin-top:4px} #msg.over #dv{display:none}
 </style>
 <div id="wrap">
   <div id="hud"><span id="n">?</span> &nbsp;|&nbsp; <span id="s">0</span></div>
@@ -60,6 +70,7 @@ GAME_HTML = r"""
       <button class="btn" id="bg">Hướng dẫn</button>
       <button class="btn" id="br2">Đổi tên</button>
       <button class="btn" id="rk">Xếp hạng</button>
+      <button class="btn" id="dv">Dev</button>
       <button class="btn" id="mn">Về menu</button></div>
     <div id="vGuide" style="display:none"><h1>Hướng dẫn</h1><div id="guide">
       ← → : đổi làn<br>↑ / Space : nhảy<br>↓ / S : cúi, trượt<br>
@@ -67,6 +78,14 @@ GAME_HTML = r"""
       <span style="color:#b71c1c">Đụng 1 lần là chó cắn!</span></div>
       <button class="btn" id="bk1">◀ Quay lại</button></div>
     <div id="vRank" style="display:none"><h1>Xếp hạng</h1><div id="rank"></div><button class="btn" id="bk2">◀ Quay lại</button></div>
+    <div id="vDevLogin" style="display:none"><h1>Dev</h1><input id="dpw" type="password" placeholder="Mật khẩu dev"><div class="dmsg" id="dmsg1"></div>
+      <button class="btn g" id="dlogin">Vào</button><button class="btn" id="bk3">◀ Quay lại</button></div>
+    <div id="vDev" style="display:none"><h1>Dev</h1><div class="dmsg" id="dmsg2"></div>
+      <div class="dsec">Cheat (khi dùng cheat, điểm không lên bảng)</div><div id="dcheat"></div>
+      <div class="dsec">Quản lý bảng xếp hạng</div><div id="dboard"></div>
+      <input id="dname" placeholder="Tên người chơi"><input id="dscore" type="number" placeholder="Điểm">
+      <button class="btn sm" id="dset">Đặt điểm (boost)</button><button class="btn sm" id="ddel">Xóa tên</button><button class="btn sm" id="dclr">Xóa tất cả</button>
+      <button class="btn" id="dout">Đăng xuất dev</button><button class="btn" id="bk4">◀ Quay lại</button></div>
     <div id="vName" style="display:none"><h1>Nhập tên</h1>
       <input id="nm" maxlength="16" placeholder="Username"><button class="btn g" id="ok">Lưu</button></div>
   </div></div>
@@ -78,7 +97,8 @@ const $=id=>document.getElementById(id);
 let NAME='', best=0;
 try{NAME=localStorage.getItem('runner_name')||''}catch(e){}
 let overMode=false;
-function view(v){['vMain','vGuide','vName','vRank'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
+let curView='vMain';
+function view(v){curView=v; $('card').classList.toggle('wide',v==='vDev'); ['vMain','vGuide','vName','vRank','vDevLogin','vDev'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
 function setName(n){NAME=n; $('n').textContent=n||'?'; best=0; try{localStorage.setItem('runner_name',n);best=+localStorage.getItem('best_'+n)||0}catch(e){}
   $('best').textContent='🏆 Điểm cao: '+best; $('res').innerHTML=n?'Chào <b>'+n+'</b>!':'';}
 $('mn').onclick=()=>{reset(); alive=false; overMode=false; showoff=false; dying=0; $('res').innerHTML=NAME?'Chào <b>'+NAME+'</b>!':''; $('go').textContent='▶ Chơi'; view('vMain');};
@@ -88,7 +108,13 @@ function setHeight(h){send('streamlit:setFrameHeight',{height:h});}
 function setValue(v){send('streamlit:setComponentValue',{value:v,dataType:'json'});}
 let BOARD=[], gotServer=false;
 function localBoard(){try{return JSON.parse(localStorage.getItem('board_local')||'[]')}catch(e){return[]}}
-window.addEventListener('message',e=>{const d=e.data; if(d&&d.type==='streamlit:render'){const a=d.args||{}; if(Array.isArray(a.board)){BOARD=a.board; gotServer=true; renderRank();}}});
+window.addEventListener('message',e=>{const d=e.data; if(d&&d.type==='streamlit:render'){const a=d.args||{};
+  if(Array.isArray(a.board)){BOARD=a.board; gotServer=true; renderRank();}
+  if('dev' in a){DEV=!!a.dev; DEVMSG=a.dev_msg||'';
+    if(!DEV)Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0});
+    $('dmsg1').textContent=DEVMSG;
+    if(DEV&&curView==='vDevLogin'){renderDev();view('vDev');} else if(!DEV&&curView==='vDev')view('vMain'); else if(DEV&&curView==='vDev')renderDev();}
+}});
 send('streamlit:componentReady',{apiVersion:1});
 function renderRank(){
   const el=$('rank'); el.textContent=''; const rows=(gotServer?BOARD:localBoard()).slice(0,10);
@@ -99,12 +125,38 @@ function renderRank(){
   el.appendChild(tb);
 }
 function submitScore(){
-  const sc=Math.floor(score); if(sc<=0||!NAME)return;
+  const sc=Math.floor(score); if(sc<=0||!NAME||cheated)return;
   try{const b=localBoard(), f=b.find(r=>r.name===NAME); if(f){if(sc>f.score)f.score=sc;} else b.push({name:NAME,score:sc});
     b.sort((x,y)=>y.score-x.score); localStorage.setItem('board_local',JSON.stringify(b.slice(0,50)));}catch(e){}
   setValue({name:NAME,score:sc,sid:Date.now()+'-'+Math.random().toString(36).slice(2,8)});
   if(!gotServer)renderRank();
 }
+/* ---- DEV: mật khẩu kiểm tra ở server (st.secrets), cheat chỉ bật khi server xác nhận ---- */
+let DEV=false, DEVMSG='', cheated=false;
+const CH={fly:false,god:false,mult:1,slow:false,start:0};
+const cheatsOn=()=>CH.fly||CH.god||CH.mult>1||CH.slow||CH.start>0;
+function devAct(action,extra){setValue(Object.assign({action:action,sid:'d-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)},extra||{}));}
+function renderDev(){
+  const c=$('dcheat'); c.textContent='';
+  const mkb=(label,fn)=>{const b=document.createElement('button'); b.className='btn sm'; b.textContent=label; b.onclick=()=>{fn();renderDev();}; c.appendChild(b);};
+  mkb('Bay: '+(CH.fly?'BẬT':'TẮT'),()=>{CH.fly=!CH.fly;});
+  mkb('Bất tử: '+(CH.god?'BẬT':'TẮT'),()=>{CH.god=!CH.god;});
+  mkb('Điểm x'+CH.mult,()=>{CH.mult=CH.mult===1?2:CH.mult===2?5:CH.mult===5?10:1;});
+  mkb('Chạy chậm: '+(CH.slow?'BẬT':'TẮT'),()=>{CH.slow=!CH.slow;});
+  mkb('Điểm khởi đầu: '+CH.start,()=>{CH.start=CH.start===0?1000:CH.start===1000?5000:CH.start===5000?20000:0;});
+  mkb('PAY TO WIN (bật tất cả)',()=>{const on=!(CH.fly&&CH.god&&CH.mult>=5&&CH.slow); CH.fly=CH.god=CH.slow=on; CH.mult=on?5:1;});
+  const b=$('dboard'); b.textContent='';
+  BOARD.slice(0,20).forEach(r=>{const row=document.createElement('div'); row.className='drow'; const t=document.createElement('span'); t.textContent=r.name+' — '+r.score;
+    const x=document.createElement('button'); x.textContent='✕'; x.onclick=()=>devAct('dev_delete',{name:r.name}); row.appendChild(t); row.appendChild(x); b.appendChild(row);});
+  $('dmsg2').textContent=DEVMSG;
+}
+$('dv').onclick=()=>{if(DEV){renderDev();view('vDev');}else{$('dpw').value='';$('dmsg1').textContent='';view('vDevLogin');$('dpw').focus();}};
+$('dlogin').onclick=()=>{devAct('dev_login',{password:$('dpw').value}); $('dpw').value=''; $('dmsg1').textContent='Đang kiểm tra...';};
+$('bk3').onclick=()=>view('vMain'); $('bk4').onclick=()=>view('vMain');
+$('dout').onclick=()=>{devAct('dev_logout'); Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0}); view('vMain');};
+$('dset').onclick=()=>{const n=$('dname').value.trim(), v=parseInt($('dscore').value,10); if(n&&v>0)devAct('dev_set',{name:n,score:v});};
+$('ddel').onclick=()=>{const n=$('dname').value.trim(); if(n)devAct('dev_delete',{name:n});};
+let clrArm=0; $('dclr').onclick=()=>{if(Date.now()-clrArm<4000){devAct('dev_clear');clrArm=0;$('dclr').textContent='Xóa tất cả';}else{clrArm=Date.now();$('dclr').textContent='Bấm lần nữa để xóa TẤT CẢ';}};
 let lastRef=0;
 function refreshBoard(){const n=Date.now(); if(n-lastRef<5000)return; lastRef=n; setValue({action:'refresh',sid:'r-'+n});}
 $('rk').onclick=()=>{renderRank();view('vRank');refreshBoard();}; $('bk2').onclick=()=>view('vMain');
@@ -482,8 +534,10 @@ function spawn(){
 }
 function reset(){
   items.forEach(o=>scene.remove(o.m)); items=[];
-  lane=1;y=0;vy=0;floorY=0;speed=SPD0;score=0;timer=0;gap=4;shake=0;duckT=0;dying=0;alive=true;wasAir=false;showoff=false;overMode=false;
+  lane=1;y=0;vy=0;floorY=0;speed=SPD0;score=DEV?CH.start:0;timer=0;gap=4;shake=0;duckT=0;dying=0;alive=true;wasAir=false;showoff=false;overMode=false;
   $('msg').classList.remove('over');
+  if(!DEV)Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0});
+  cheated=cheatsOn(); $('n').textContent=NAME+(cheated?' [DEV]':'');
   player.position.set(0,0,0);player.rotation.set(0,0,0);player.scale.y=1;player.visible=true;
   dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;mouthBone.visible=false;pile.visible=false;
   drops.forEach(d=>d.m.visible=false); pool.visible=false; boneFly.visible=false; $('blood').style.opacity=0;
@@ -507,7 +561,7 @@ const left=()=>{if(alive&&lane>0)lane--}, right=()=>{if(alive&&lane<2)lane++};
 const jump=()=>{if(alive&&y<=floorY+.01){vy=.34;sfx.jump();}};
 const duck=()=>{if(!alive)return; if(y>floorY+.01)vy=-.4; else if(duckT===0){duckT=45;sfx.swoosh();}};
 addEventListener('keydown',e=>{
-  if(e.target.tagName==='INPUT'){if(e.key==='Enter')$('ok').click();return;}
+  if(e.target.tagName==='INPUT'){if(e.key==='Enter'){if(e.target.id==='dpw')$('dlogin').click(); else if(e.target.id==='nm')$('ok').click();}return;}
   if(introT>0){endIntro();return;}
   if(e.key==='m'||e.key==='M')$('mute').click();
   if(e.key==='ArrowLeft'||e.key==='a')left();
@@ -605,7 +659,7 @@ function loop(){
     dog.rotation.y=Math.PI+Math.sin(t*1.6)*.5; dhead.rotation.x=.45+Math.sin(t*5)*.08; jaw=.12+Math.abs(Math.sin(t*9))*.1;
     tail.rotation.z=Math.sin(t*22)*.6; if(++chewT%26===0)sfx.chomp();
   } else if(alive){
-    speed=Math.min(SPDMAX,speed+.00004); score+=speed*.25; timer++;
+    speed=Math.min(CH.slow?SPD0:SPDMAX,speed+.00004); score+=speed*.25*CH.mult; timer++;
     if(timer%Math.max(17,Math.floor(42-(speed-SPD0)*130))===0)spawn();
     player.position.x+=(LANES[lane]-player.position.x)*.2; player.rotation.z=(player.position.x-LANES[lane])*.18;
     let floor=0, dead=null;
@@ -621,7 +675,8 @@ function loop(){
       }
       if(o.m.position.z>12){scene.remove(o.m);items.splice(i,1);}
     }
-    if(dead)end(dead.type);
+    if(dead&&!CH.god&&!CH.fly)end(dead.type);
+    else if(CH.fly){y+=(4.4-y)*.08; vy=0; floorY=0; wasAir=true;}
     else{
       floorY=floor; vy-=.02; y+=vy; if(y<=floor){y=floor;vy=0;}
       const air=y>floorY+.02; if(wasAir&&!air)sfx.land(); wasAir=air;
@@ -765,6 +820,113 @@ def save_score(name, score):
         pass
 
 
+def _file_write(data):
+    try:
+        tmp = SCORES.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data[:200], ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, SCORES)
+    except Exception:
+        pass
+
+
+def _sb_req(method, params=None, body=None, prefer=None):
+    url, key = _sb()
+    h = _hdr(key)
+    if prefer:
+        h["Prefer"] = prefer
+    r = requests.request(method, f"{url}/rest/v1/scores", headers=h, params=params, timeout=6,
+                         data=json.dumps(body) if body is not None else None)
+    r.raise_for_status()
+
+
+# ---------- quản trị bảng xếp hạng (chỉ gọi khi đã đăng nhập dev) ----------
+def delete_score(name):
+    try:
+        if _sb():
+            _sb_req("DELETE", {"name": "eq." + name})
+            _remote_top.clear()
+        else:
+            _file_write([d for d in _file_load() if d["name"] != name])
+        return True
+    except Exception:
+        return False
+
+
+def set_score(name, score):
+    try:
+        if _sb():
+            _sb_req("POST", {"on_conflict": "name"}, {"name": name, "score": score}, "resolution=merge-duplicates,return=minimal")
+            _remote_top.clear()
+        else:
+            data = [d for d in _file_load() if d["name"] != name] + [{"name": name, "score": score}]
+            data.sort(key=lambda d: d["score"], reverse=True)
+            _file_write(data)
+        return True
+    except Exception:
+        return False
+
+
+def clear_scores():
+    try:
+        if _sb():
+            _sb_req("DELETE", {"score": "gte.0"})
+            _remote_top.clear()
+        else:
+            _file_write([])
+        return True
+    except Exception:
+        return False
+
+
+def dev_password():
+    try:
+        return str(st.secrets["DEV_PASSWORD"])
+    except Exception:
+        return os.environ.get("DEV_PASSWORD", "")
+
+
+def handle_action(res):
+    ss = st.session_state
+    act = res.get("action")
+    if act == "refresh":
+        _remote_top.clear()
+        return
+    if act == "dev_login":
+        pw, now = dev_password(), time.time()
+        if not pw:
+            ss["dev_msg"] = "Server chưa cấu hình DEV_PASSWORD."
+        elif ss.get("dev_lock", 0) > now:
+            ss["dev_msg"] = f"Thử sai quá nhiều, đợi {int(ss['dev_lock'] - now)}s."
+        elif hmac.compare_digest(str(res.get("password", "")).encode(), pw.encode()):
+            ss["dev_ok"], ss["dev_fail"], ss["dev_msg"] = True, 0, "Đã vào chế độ dev."
+        else:
+            ss["dev_fail"] = ss.get("dev_fail", 0) + 1
+            ss["dev_msg"] = "Sai mật khẩu."
+            if ss["dev_fail"] >= 5:
+                ss["dev_lock"], ss["dev_fail"] = now + 60, 0
+        return
+    if act == "dev_logout":
+        ss["dev_ok"], ss["dev_msg"] = False, ""
+        return
+    if act in ("dev_delete", "dev_set", "dev_clear"):
+        if not ss.get("dev_ok"):
+            ss["dev_msg"] = "Chưa đăng nhập dev."
+            return
+        name = str(res.get("name") or "").strip()[:16]
+        if act == "dev_delete":
+            ss["dev_msg"] = ("Đã xóa " if name and delete_score(name) else "Không xóa được ") + name
+        elif act == "dev_set":
+            try:
+                sc = max(1, min(999999, int(res.get("score"))))
+            except Exception:
+                sc = 0
+            ss["dev_msg"] = (f"Đã đặt {name} = {sc}" if name and sc and set_score(name, sc) else "Không đặt được điểm")
+        else:
+            ss["dev_msg"] = "Đã xóa toàn bộ bảng." if clear_scores() else "Không xóa được."
+        return
+    save_score(res.get("name"), res.get("score"))      # điểm bình thường của người chơi
+
+
 PAGE = ("<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'></head><body>"
         + GAME_HTML + "</body></html>")
@@ -774,12 +936,10 @@ if not index.exists() or index.read_text(encoding="utf-8") != PAGE:
     index.write_text(PAGE, encoding="utf-8")
 
 game = components.declare_component("choc_cho", path=str(FRONT))
-result = game(board=load_scores()[:20], key="game", default=None)
+result = game(board=load_scores()[:20], dev=bool(st.session_state.get("dev_ok")),
+              dev_msg=st.session_state.get("dev_msg", ""), key="game", default=None)
 
 if isinstance(result, dict) and result.get("sid") and result["sid"] != st.session_state.get("last_sid"):
     st.session_state["last_sid"] = result["sid"]
-    if result.get("action") == "refresh":
-        _remote_top.clear()                        # người chơi mở bảng xếp hạng -> tải điểm mới nhất
-    else:
-        save_score(result.get("name"), result.get("score"))
+    handle_action(result)
     st.rerun()
