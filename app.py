@@ -426,7 +426,7 @@ dhead.add(bx(.44,.4,.45,0xa8672d,0,0,0));
 dhead.add(bx(.26,.17,.34,0x5a3a1a,0,-.06,-.36));                                      // mõm trên
 dhead.add(bx(.08,.07,.06,0x000000,0,.02,-.55));                                       // mũi
 for(const x of [-.19,.19]){const e=new THREE.Mesh(new THREE.BoxGeometry(.1,.3,.16),dk);e.position.set(x,.15,.1);e.rotation.z=x>0?-.35:.35;dhead.add(e);
-  dhead.add(bx(.07,.07,.03,0xff1744,x*.6,.08,-.23));}
+  {const ey=bx(.07,.07,.03,0xff1744,x*.6,.08,-.23); ey.userData.eye=1; dhead.add(ey);}}
 const jawG=new THREE.Group(); jawG.position.set(0,-.13,-.12); dhead.add(jawG);
 jawG.add(bx(.22,.08,.32,0x5a3a1a,0,-.03,-.2)); jawG.add(bx(.12,.04,.2,0xff8a80,0,0,-.2));   // hàm dưới + lưỡi
 for(const x of [-.08,.08])jawG.add(bx(.03,.05,.03,0xffffff,x,.03,-.34));
@@ -540,7 +540,7 @@ function reset(){
   if(!DEV)Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0});
   cheated=cheatsOn(); $('n').textContent=NAME+(cheated?' [DEV]':'');
   player.position.set(0,0,0);player.rotation.set(0,0,0);player.scale.y=1;player.visible=true;
-  dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;mouthBone.visible=false;pile.visible=false;
+  dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;setEyes(true);mouthBone.visible=false;pile.visible=false;
   drops.forEach(d=>d.m.visible=false); pool.visible=false; boneFly.visible=false; $('blood').style.opacity=0;
   cx=0;cy=3.6;cz=6.5;lx=0;ly=1.2;lz=-6;
 }
@@ -590,11 +590,22 @@ function goFull(){                                   // điện thoại: toàn m
   }catch(e){}
 }
 $('go').onclick=()=>{if(!NAME){view('vName');return;} goFull(); ac(); if(AC.state==='suspended')AC.resume(); ambWanted=true; ambience(true);
-  $('msg').style.display='none'; stopMenuAnim(); reset(); window.focus();};
+  $('msg').style.display='none'; startIntro(false);};
 
 /* ---------- ANIMATION MỞ ĐẦU: chọc chó -> chó dậy -> bị đuổi ---------- */
 let introT=0, introMv=0, introLoop=false;
 const stick=cyl(.03,.03,1.1,0x8d6e63,0,-1.35,0,5); stick.visible=false; lim.armR.add(stick);
+const zTex=canvasTex(64,64,(x,w,h)=>{x.font='bold 50px monospace'; x.textAlign='center'; x.strokeStyle='#2e1d0e'; x.lineWidth=6; x.strokeText('Z',32,50); x.fillStyle='#fff'; x.fillText('Z',32,50);});
+const zzz=[0,1,2].map(()=>{const m=new THREE.Sprite(new THREE.SpriteMaterial({map:zTex,transparent:true,depthWrite:false,fog:false})); m.visible=false; scene.add(m); return m;});
+function setEyes(open){dhead.children.forEach(c=>{if(c.userData.eye)c.scale.y=open?1:.15;});}
+function menuIdle(){                              // menu: chó đang ngủ, cậu nhóc đứng chờ phía xa
+  introT=1; introMv=0;
+  player.position.set(-3.6,0,-.45); player.rotation.set(0,-Math.PI/2,0);
+  lim.legL.rotation.x=0; lim.legR.rotation.x=0; lim.armL.rotation.x=Math.sin(t*1.5)*.06; lim.armR.rotation.x=1.2; stick.visible=true;
+  dog.position.set(.8,0,0); dog.rotation.y=Math.PI/2; dog.scale.set(1,.6+Math.sin(t*2)*.02,1); jaw=0; dhead.rotation.x=0; tail.rotation.z=0;
+  dl.forEach(q=>q.rotation.x=0); setEyes(false);
+  zzz.forEach((z,i)=>{const ph=(t*.45+i/3)%1; z.visible=true; z.position.set(-.1-ph*.5,1.0+ph*1.1,.1); const sc=.3+ph*.45; z.scale.set(sc,sc,1); z.material.opacity=ph<.8?1:(1-ph)*5;});
+}
 const CAP=[[45,'Chọc nó thử xem... 😏'],[105,'Ối! Nó dậy rồi!'],[135,'CHẠY ĐI!!!']];
 function setCap(t){$('cap').textContent=t; $('cap').style.display=t?'block':'none'; $('skip').style.display=(introT>0&&!introLoop)?'block':'none';}
 function startIntro(loop){
@@ -603,11 +614,13 @@ function startIntro(loop){
   dog.position.set(.8,0,0); dog.rotation.y=Math.PI/2; dog.scale.set(1,.6,1);      // chó nằm ngủ
   stick.visible=true; mouthBone.visible=false; jaw=0;
   cx=3.2;cy=1.8;cz=4.2;lx=-.6;ly=1;lz=0;
-  setCap('Con chó đang ngủ...'); sfx.snore();
+  setEyes(false); zzz.forEach(z=>z.visible=false);
+  if(loop)setCap(''); else {setCap('Con chó đang ngủ...'); sfx.snore();}
 }
 function stopMenuAnim(){introT=0; introLoop=false; quiet=false; stick.visible=false; dog.scale.set(1,1,1); player.rotation.z=0; jaw=0; setCap('');}
 function endIntro(){introT=0; stick.visible=false; dog.scale.set(1,1,1); jaw=0; setCap(''); reset(); window.focus();}
 function introStep(){
+  if(introLoop){menuIdle(); return;}
   const k=introT++; CAP.forEach(c=>{if(k===c[0])setCap(c[1]);});
   if(k<45){                                   // rón rén lại gần, tay cầm gậy
     const cyc=k*.28; player.position.x=-3.6+k/45*2.1;
@@ -617,7 +630,7 @@ function introStep(){
     lim.legL.rotation.x=0; lim.legR.rotation.x=0; lim.armL.rotation.x=0;
     const ph=(k-45)%20; lim.armR.rotation.x=1.2+(ph<8?ph/8*.45:(ph<12?.45-(ph-8)/4*.45:0));
     if(ph===8){sfx.poke(); dog.position.x=.88;} else dog.position.x+=(.8-dog.position.x)*.3;
-    if(k>85)dog.scale.y+=(1-dog.scale.y)*.15; if(k===90)sfx.growl();
+    if(k>85)dog.scale.y+=(1-dog.scale.y)*.15; if(k===88)setEyes(true); if(k===90)sfx.growl();
     player.rotation.z=Math.sin(k*.5)*.05;
   } else if(k<135){                           // chó bật dậy sủa, nhóc giật mình
     if(k===105){sfx.bark(); sfx.yelp();} if(k===118)sfx.bark();
