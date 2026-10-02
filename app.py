@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -104,7 +105,9 @@ function submitScore(){
   setValue({name:NAME,score:sc,sid:Date.now()+'-'+Math.random().toString(36).slice(2,8)});
   if(!gotServer)renderRank();
 }
-$('rk').onclick=()=>{renderRank();view('vRank');}; $('bk2').onclick=()=>view('vMain');
+let lastRef=0;
+function refreshBoard(){const n=Date.now(); if(n-lastRef<5000)return; lastRef=n; setValue({action:'refresh',sid:'r-'+n});}
+$('rk').onclick=()=>{renderRank();view('vRank');refreshBoard();}; $('bk2').onclick=()=>view('vMain');
 $('bg').onclick=()=>view('vGuide'); $('bk1').onclick=()=>view('vMain');
 $('br2').onclick=()=>{$('nm').value=NAME;view('vName');$('nm').focus();};
 $('ok').onclick=()=>{const v=$('nm').value.trim(); if(!v){$('nm').focus();return;} setName(v); view('vMain');};
@@ -685,12 +688,42 @@ SCORES = BASE / "scores.json"
 FRONT = BASE / "game_frontend"
 
 
-def load_scores():
+def _sb():
+    """Trả về (url, key) nếu đã cấu hình Supabase trong st.secrets, ngược lại None."""
+    try:
+        return st.secrets["SUPABASE_URL"].rstrip("/"), st.secrets["SUPABASE_KEY"]
+    except Exception:
+        return None
+
+
+def _hdr(key):
+    return {"apikey": key, "Authorization": "Bearer " + key, "Content-Type": "application/json"}
+
+
+def _file_load():
     try:
         data = json.loads(SCORES.read_text(encoding="utf-8"))
         return [d for d in data if isinstance(d, dict) and "name" in d and "score" in d]
     except Exception:
         return []
+
+
+@st.cache_data(ttl=5, show_spinner=False)
+def _remote_top(url, key):
+    r = requests.get(f"{url}/rest/v1/scores", headers=_hdr(key), timeout=6,
+                     params={"select": "name,score", "order": "score.desc", "limit": "20"})
+    r.raise_for_status()
+    return r.json()
+
+
+def load_scores():
+    sb = _sb()
+    if sb:
+        try:
+            return _remote_top(*sb)
+        except Exception:
+            pass
+    return _file_load()[:20]
 
 
 def save_score(name, score):
@@ -701,7 +734,22 @@ def save_score(name, score):
         return
     if not name or score <= 0 or score > 999999:
         return
-    data = load_scores()
+    sb = _sb()
+    if sb:
+        url, key = sb
+        try:
+            cur = requests.get(f"{url}/rest/v1/scores", headers=_hdr(key), timeout=6,
+                               params={"select": "score", "name": "eq." + name}).json()
+            if not cur or int(cur[0]["score"]) < score:
+                h = _hdr(key)
+                h["Prefer"] = "resolution=merge-duplicates,return=minimal"
+                requests.post(f"{url}/rest/v1/scores", headers=h, timeout=6, params={"on_conflict": "name"},
+                              data=json.dumps({"name": name, "score": score})).raise_for_status()
+            _remote_top.clear()
+            return
+        except Exception:
+            pass                                   # lỗi mạng -> lưu tạm vào file
+    data = _file_load()
     for d in data:
         if d["name"] == name:
             d["score"] = max(d["score"], score)
@@ -730,5 +778,8 @@ result = game(board=load_scores()[:20], key="game", default=None)
 
 if isinstance(result, dict) and result.get("sid") and result["sid"] != st.session_state.get("last_sid"):
     st.session_state["last_sid"] = result["sid"]
-    save_score(result.get("name"), result.get("score"))
+    if result.get("action") == "refresh":
+        _remote_top.clear()                        # người chơi mở bảng xếp hạng -> tải điểm mới nhất
+    else:
+        save_score(result.get("name"), result.get("score"))
     st.rerun()
