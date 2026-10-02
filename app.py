@@ -9,7 +9,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Chọc chó", page_icon="🐕", layout="wide")
-st.markdown("<h3 style='text-align:center'>GAME LỎ TOP 1 LỤM 100K</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align:center'>🤑GAME LỎ TOP 1 LỤM 100K🤑</h3>", unsafe_allow_html=True)
 
 GAME_HTML = r"""
 <style>
