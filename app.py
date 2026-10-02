@@ -1,3 +1,7 @@
+import json
+import os
+from pathlib import Path
+
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -40,6 +44,9 @@ GAME_HTML = r"""
   #joy{position:absolute;left:18px;bottom:24px;width:130px;height:130px;border-radius:50%;background:rgba(232,201,154,.35);border:4px solid rgba(46,29,14,.7);display:none;touch-action:none}
   #knob{position:absolute;left:35px;top:35px;width:60px;height:60px;border-radius:50%;background:#8d6e3f;border:4px solid #2e1d0e}
   #wrap.full{max-width:none;width:100vw;height:100vh;aspect-ratio:auto;margin:0}
+  #rank{max-height:300px;overflow:auto;font-weight:bold;font-size:14px;margin:6px 0}
+  #rank table{width:100%;border-collapse:collapse} #rank td{padding:4px 6px;border-bottom:2px dashed #b08b5a;text-align:left}
+  #rank td:first-child{width:34px} #rank td:last-child{text-align:right} #rank tr.me{background:#f5d98a}
 </style>
 <div id="wrap">
   <div id="hud"><span id="n">?</span> &nbsp;|&nbsp; <span id="s">0</span></div>
@@ -51,12 +58,14 @@ GAME_HTML = r"""
       <button class="btn g" id="go">▶ Chơi</button>
       <button class="btn" id="bg">Hướng dẫn</button>
       <button class="btn" id="br2">Đổi tên</button>
+      <button class="btn" id="rk">Xếp hạng</button>
       <button class="btn" id="mn">Về menu</button></div>
     <div id="vGuide" style="display:none"><h1>Hướng dẫn</h1><div id="guide">
       ← → : đổi làn<br>↑ / Space : nhảy<br>↓ / S : cúi, trượt<br>
       Xe tải, xe rơm, máy cày: nhảy lên nóc chạy<br>Trâu, đá, khúc gỗ, hàng rào, xe máy, mương: nhảy qua<br>Cổng tre, cành cây thấp: cúi xuống<br>Vịt, xe cút kít, gạch, chum: nhảy qua<br>Cây, tường rơm cao: không nhảy được, đổi làn<br>Space: bỏ qua đoạn mở đầu · M: tắt tiếng<br>
       <span style="color:#b71c1c">Đụng 1 lần là chó cắn!</span></div>
       <button class="btn" id="bk1">◀ Quay lại</button></div>
+    <div id="vRank" style="display:none"><h1>Xếp hạng</h1><div id="rank"></div><button class="btn" id="bk2">◀ Quay lại</button></div>
     <div id="vName" style="display:none"><h1>Nhập tên</h1>
       <input id="nm" maxlength="16" placeholder="Username"><button class="btn g" id="ok">Lưu</button></div>
   </div></div>
@@ -68,10 +77,34 @@ const $=id=>document.getElementById(id);
 let NAME='', best=0;
 try{NAME=localStorage.getItem('runner_name')||''}catch(e){}
 let overMode=false;
-function view(v){['vMain','vGuide','vName'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
+function view(v){['vMain','vGuide','vName','vRank'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
 function setName(n){NAME=n; $('n').textContent=n||'?'; best=0; try{localStorage.setItem('runner_name',n);best=+localStorage.getItem('best_'+n)||0}catch(e){}
   $('best').textContent='🏆 Điểm cao: '+best; $('res').innerHTML=n?'Chào <b>'+n+'</b>!':'';}
 $('mn').onclick=()=>{reset(); alive=false; overMode=false; showoff=false; dying=0; $('res').innerHTML=NAME?'Chào <b>'+NAME+'</b>!':''; $('go').textContent='▶ Chơi'; view('vMain');};
+/* ---- cầu nối Streamlit + bảng xếp hạng ---- */
+function send(type,data){try{window.parent.postMessage(Object.assign({isStreamlitMessage:true,type:type},data||{}),'*');}catch(e){}}
+function setHeight(h){send('streamlit:setFrameHeight',{height:h});}
+function setValue(v){send('streamlit:setComponentValue',{value:v,dataType:'json'});}
+let BOARD=[], gotServer=false;
+function localBoard(){try{return JSON.parse(localStorage.getItem('board_local')||'[]')}catch(e){return[]}}
+window.addEventListener('message',e=>{const d=e.data; if(d&&d.type==='streamlit:render'){const a=d.args||{}; if(Array.isArray(a.board)){BOARD=a.board; gotServer=true; renderRank();}}});
+send('streamlit:componentReady',{apiVersion:1});
+function renderRank(){
+  const el=$('rank'); el.textContent=''; const rows=(gotServer?BOARD:localBoard()).slice(0,10);
+  if(!rows.length){el.textContent='Chưa có ai chơi. Hãy là người đầu tiên!';return;}
+  const tb=document.createElement('table'), med=['🥇','🥈','🥉'];
+  rows.forEach((r,i)=>{const tr=document.createElement('tr'); if(r.name===NAME)tr.className='me';
+    [med[i]||String(i+1),String(r.name),String(r.score)].forEach(t=>{const td=document.createElement('td'); td.textContent=t; tr.appendChild(td);}); tb.appendChild(tr);});
+  el.appendChild(tb);
+}
+function submitScore(){
+  const sc=Math.floor(score); if(sc<=0||!NAME)return;
+  try{const b=localBoard(), f=b.find(r=>r.name===NAME); if(f){if(sc>f.score)f.score=sc;} else b.push({name:NAME,score:sc});
+    b.sort((x,y)=>y.score-x.score); localStorage.setItem('board_local',JSON.stringify(b.slice(0,50)));}catch(e){}
+  setValue({name:NAME,score:sc,sid:Date.now()+'-'+Math.random().toString(36).slice(2,8)});
+  if(!gotServer)renderRank();
+}
+$('rk').onclick=()=>{renderRank();view('vRank');}; $('bk2').onclick=()=>view('vMain');
 $('bg').onclick=()=>view('vGuide'); $('bk1').onclick=()=>view('vMain');
 $('br2').onclick=()=>{$('nm').value=NAME;view('vName');$('nm').focus();};
 $('ok').onclick=()=>{const v=$('nm').value.trim(); if(!v){$('nm').focus();return;} setName(v); view('vMain');};
@@ -118,6 +151,8 @@ const sfx={
   moo:()=>tn(140,95,1,'sawtooth',.16,320),
   creak:()=>tn(520,330,.5,'sawtooth',.05,800),
   engine:()=>{for(let i=0;i<8;i++)setTimeout(()=>tn(70,55,.08,'square',.13,220),i*95)},
+  baa:()=>tn(420,300,.45,'sawtooth',.07,700),
+  fire:()=>nz(.6,.12,2200,.7,.05),
   quack:()=>{[0,150,300].forEach(d=>setTimeout(()=>tn(650,430,.11,'square',.08,1200),d))},
   snore:()=>{nz(.9,.08,180,1,.4,'lowpass'); tn(75,60,.6,'sawtooth',.03,150)},
   poke:()=>{tn(320,180,.07,'triangle',.18,800); nz(.06,.2,1500,1,.003)},
@@ -375,8 +410,8 @@ const pile=new THREE.Group(); pile.visible=false; scene.add(pile);
  const sp=cyl(.03,.03,.7,bm,-.45,.03,.1,5); sp.rotation.z=Math.PI/2; pile.add(sp);
  for(const [a,z] of [[.5,.55],[-.4,-.5]]){const b=boneMesh(); b.scale.set(1.3,1.3,1.3); b.rotation.y=a; b.position.set(0,.1,z); pile.add(b);}}
 function wheel(r,x,y,z,w){const m=cyl(r,r,w||.2,0x212121,x,y,z,10);m.rotation.z=Math.PI/2;return m;}
-const HT={fence:.7,buffalo:1.7,pit:.35,log:.65,rock:.95,moto:1.3,ducks:.5,cart:1.2,bricks:1.0,jars:1.0};
-function mk(type,l){
+const HT={stump:.9,sheep:.9,campfire:.8,bike:1.0,tires:.9,hedge:1.0,cone:.7,firewood:1.1,barrels:1.0,fence:.7,buffalo:1.7,pit:.35,log:.65,rock:.95,moto:1.3,ducks:.5,cart:1.2,bricks:1.0,jars:1.0};
+function mk(type,l,zo){
   const g=new THREE.Group(); let hz=.6, top=0, solid=false;
   if(type==='fence'){for(const x of [-.8,0,.8])g.add(bx(.12,.9,.12,0x8d6e63,x,.45,0)); g.add(bx(1.8,.12,.08,0xa1785c,0,.35,0)); g.add(bx(1.8,.12,.08,0xa1785c,0,.68,0)); hz=.3;}
   else if(type==='buffalo'){g.add(buffaloMesh()); hz=1.1;}
@@ -412,19 +447,35 @@ function mk(type,l){
     const bm=cyl(.1,.1,2.4,0x795548,0,1.85,0,6); bm.rotation.z=Math.PI/2; g.add(bm);
     for(let i=0;i<5;i++){const lf=new THREE.Mesh(new THREE.IcosahedronGeometry(.28,0),L(i%2?0x388e3c:0x2e7d32)); lf.position.set(-.9+i*.45,1.65,0); g.add(lf);} hz=.4;}
   else if(type==='haywall'){for(let i=0;i<4;i++)g.add(bx(1.8,.7,1,i%2?0xe0b84c:0xd4a537,0,.35+i*.7,0)); g.add(bx(1.9,.12,1.1,0x8d6e63,0,2.86,0)); hz=.6; solid=true;}
-  cast(g); g.position.set(LANES[l],0,-80); scene.add(g); items.push({m:g,type,hz,top,solid});
+  else if(type==='stump'){g.add(cyl(.5,.6,.7,0x8d6e63,0,.35,0,8)); g.add(cyl(.45,.45,.04,0xd7b98a,0,.71,0,8)); hz=.5;}
+  else if(type==='sheep'){for(const [x,z] of [[-.5,0],[.5,.3]]){const sh=new THREE.Group(); sh.add(bx(.7,.5,.9,0xf5f5f5,0,.6,0)); sh.add(bx(.3,.3,.3,0x333333,0,.75,-.55));
+    for(const [a,b] of [[-.2,-.3],[.2,-.3],[-.2,.3],[.2,.3]])sh.add(bx(.1,.35,.1,0x333333,a,.18,b)); sh.position.set(x,0,z); g.add(sh);} hz=.8;}
+  else if(type==='campfire'){for(let i=0;i<5;i++){const lg=cyl(.07,.07,.9,0x5d4037,0,.15,0,5); lg.rotation.set(1.57,0,i*1.25); g.add(lg);}
+    for(const [c,r,yy] of [[0xff5722,.38,.4],[0xffc107,.25,.55],[0xfff59d,.14,.7]]){const f=new THREE.Mesh(new THREE.ConeGeometry(r,.7,5),new THREE.MeshBasicMaterial({color:c})); f.position.y=yy; g.add(f);} hz=.6;}
+  else if(type==='tent'){const tn2=new THREE.Mesh(new THREE.ConeGeometry(1.3,2,4),L(0xe53935)); tn2.rotation.y=Math.PI/4; tn2.position.y=1; g.add(tn2); g.add(bx(.5,1,.05,0x4e342e,0,.5,.9)); hz=1.1; solid=true;}
+  else if(type==='bike'){g.add(wheel(.4,0,.4,-.7)); g.add(wheel(.4,0,.4,.7)); g.add(bx(.06,.06,1.4,0x1e88e5,0,.75,0)); g.add(bx(.06,.7,.06,0x1e88e5,0,.75,.3)); g.add(bx(.5,.06,.06,0x424242,0,1.1,-.65)); g.add(bx(.2,.06,.3,0x212121,0,1.1,.4)); hz=.8;}
+  else if(type==='tires'){for(const y0 of [.2,.6]){const tr=new THREE.Mesh(new THREE.TorusGeometry(.5,.2,6,10),L(0x212121)); tr.rotation.x=Math.PI/2; tr.position.y=y0; g.add(tr);} hz=.6;}
+  else if(type==='hedge'){g.add(bx(1.8,.9,.8,0x2e7d32,0,.45,0)); for(let i=0;i<4;i++)g.add(blob(0x388e3c,.45,-.7+i*.47,.95,0)); hz=.5;}
+  else if(type==='hive'){for(const x of [-1.1,1.1])g.add(cyl(.05,.05,1.9,0x6d4c41,x,.95,0,5)); const bm=cyl(.08,.08,2.4,0x795548,0,1.9,0,6); bm.rotation.z=Math.PI/2; g.add(bm);
+    for(const x of [-.5,.5]){const h=new THREE.Mesh(new THREE.SphereGeometry(.28,6,5),L(0xffb300)); h.scale.y=1.4; h.position.set(x,1.55,0); g.add(h);} hz=.4;}
+  else if(type==='cone'){for(const x of [-.6,0,.6]){g.add(cyl(0,.25,.7,0xff6d00,x,.35,0,6)); g.add(cyl(.18,.18,.12,0xffffff,x,.4,0,6));} hz=.4;}
+  else if(type==='boulder'){const b=new THREE.Mesh(new THREE.IcosahedronGeometry(1.2,0),L(0x757575)); b.position.y=1.0; g.add(b); const b2=new THREE.Mesh(new THREE.IcosahedronGeometry(.7,0),L(0x8d8d8d)); b2.position.set(.7,.5,.3); g.add(b2); hz=1.1; solid=true;}
+  else if(type==='firewood'){for(let r=0;r<3;r++)for(let c=0;c<4-r;c++){const lg=cyl(.17,.17,1.4,r%2?0x8d6e63:0x6d4c41,-.6+c*.4+r*.2,.2+r*.33,0,6); lg.rotation.x=1.57; g.add(lg);} hz=.9;}
+  else if(type==='barrels'){for(const x of [-.45,.45]){g.add(cyl(.38,.38,.9,0x1565c0,x,.5,0,10)); g.add(cyl(.4,.4,.08,0x0d47a1,x,.7,0,10));} hz=.6;}
+  cast(g); g.position.set(LANES[l],0,-80-(zo||0)); scene.add(g); items.push({m:g,type,hz,top,solid});
 }
-const OB=['fence','log','rock','moto','buffalo','truck','haycart','tractor','pit','gate','tree','tree','ducks','cart','bricks','jars','branch','haywall'];
-const LOWS=['fence','log','rock','ducks','cart','bricks','jars','pit'];
+const OB=['fence','log','rock','moto','buffalo','truck','haycart','tractor','pit','gate','tree','tree','ducks','cart','bricks','jars','branch','haywall','stump','sheep','campfire','tent','bike','tires','hedge','hive','cone','boulder','firewood','barrels'];
+const LOWS=['fence','log','rock','ducks','cart','bricks','jars','pit','stump','sheep','campfire','bike','tires','hedge','cone','firewood','barrels'];
 function spawn(){
   const lv=Math.min(1,(speed-SPD0)/(SPDMAX-SPD0)), l=Math.floor(Math.random()*3), pk=a=>a[Math.floor(Math.random()*a.length)];
-  if(Math.random()<.12+lv*.2){                       // đủ 3 làn có vật cản, chỉ 1 làn nhảy qua được
+  if(Math.random()<.15+lv*.25){                       // đủ 3 làn có vật cản, chỉ 1 làn nhảy qua được
     const free=Math.floor(Math.random()*3);
     for(let i=0;i<3;i++)mk(i===free?pk(LOWS):pk(OB),i);
     return;
   }
   mk(pk(OB),l);
-  if(Math.random()<.3+lv*.4)mk(pk(OB),(l+1+Math.floor(Math.random()*2))%3);
+  if(Math.random()<.38+lv*.4)mk(pk(OB),(l+1+Math.floor(Math.random()*2))%3);
+  if(Math.random()<.3)mk(pk(LOWS),Math.floor(Math.random()*3),8);          // chuỗi vật cản liên tiếp
 }
 function reset(){
   items.forEach(o=>scene.remove(o.m)); items=[];
@@ -447,7 +498,7 @@ function bloodBurst(){
 function showOver(){
   if(score>best){best=Math.floor(score);try{localStorage.setItem('best_'+NAME,best)}catch(e){}}
   $('res').innerHTML='Chó cắn rồi! <b style="color:#b71c1c">'+NAME+' gà quá!</b> &nbsp;Điểm: '+Math.floor(score);
-  $('best').textContent='Điểm cao: '+best; $('go').textContent='↻ Chơi lại'; overMode=true; view('vMain'); $('msg').style.display='flex'; sfx.over();
+  $('best').textContent='Điểm cao: '+best; $('go').textContent='↻ Chơi lại'; overMode=true; view('vMain'); $('msg').style.display='flex'; sfx.over(); submitScore();
 }
 const left=()=>{if(alive&&lane>0)lane--}, right=()=>{if(alive&&lane<2)lane++};
 const jump=()=>{if(alive&&y<=floorY+.01){vy=.34;sfx.jump();}};
@@ -552,18 +603,18 @@ function loop(){
     tail.rotation.z=Math.sin(t*22)*.6; if(++chewT%26===0)sfx.chomp();
   } else if(alive){
     speed=Math.min(SPDMAX,speed+.00004); score+=speed*.25; timer++;
-    if(timer%Math.max(20,Math.floor(50-(speed-SPD0)*140))===0)spawn();
+    if(timer%Math.max(17,Math.floor(42-(speed-SPD0)*130))===0)spawn();
     player.position.x+=(LANES[lane]-player.position.x)*.2; player.rotation.z=(player.position.x-LANES[lane])*.18;
     let floor=0, dead=null;
     for(let i=items.length-1;i>=0;i--){
       const o=items[i]; o.m.position.z+=speed*2;
       if(!o.snd&&o.m.position.z>-42){o.snd=1; if(o.type==='truck')sfx.horn(); else if(o.type==='buffalo')sfx.moo(); else if(o.type==='haycart')sfx.creak();
-        else if(o.type==='tractor')sfx.engine(); else if(o.type==='moto')sfx.moto(); else if(o.type==='ducks')sfx.quack(); else if(o.type==='cart')sfx.creak();}
+        else if(o.type==='tractor')sfx.engine(); else if(o.type==='moto')sfx.moto(); else if(o.type==='ducks')sfx.quack(); else if(o.type==='sheep')sfx.baa(); else if(o.type==='campfire')sfx.fire(); else if(o.type==='cart')sfx.creak();}
       const dz=Math.abs(o.m.position.z-player.position.z), dx=Math.abs(o.m.position.x-player.position.x);
       if(dx<.9&&dz<o.hz+.35){
         if(o.top){ if(y>=o.top-.35)floor=Math.max(floor,o.top); else dead=o; }
         else if(o.solid)dead=o;                                        // cây: không nhảy/trượt qua được
-        else{ const bad=(o.type==='gate'||o.type==='branch')?(y<2.0&&(duckT===0||y>.01)):y<HT[o.type]; if(bad)dead=o; }
+        else{ const bad=(o.type==='gate'||o.type==='branch'||o.type==='hive')?(y<2.0&&(duckT===0||y>.01)):y<HT[o.type]; if(bad)dead=o; }
       }
       if(o.m.position.z>12){scene.remove(o.m);items.splice(i,1);}
     }
@@ -618,6 +669,7 @@ function fit(){
   const tall=IS_TOUCH&&!fs&&innerWidth<700;               // điện thoại cầm dọc: khung cao lấp đầy màn hình
   wrap.classList.toggle('full',fs);
   wrap.style.aspectRatio=tall?'auto':''; wrap.style.height=tall?Math.round(Math.min(ph-60,innerWidth*1.9))+'px':'';
+  if(!fs)setHeight(Math.round(wrap.getBoundingClientRect().height)+4);
   try{ if(!fs)window.frameElement.style.height=(Math.round(wrap.getBoundingClientRect().height)+4)+'px'; }catch(e){}
   renderer.setSize(W(),H()); cam.aspect=W()/H(); cam.fov=cam.aspect<1?82:72; cam.updateProjectionMatrix();
   $('card').style.transform='scale('+Math.min(1,H()/520,W()/380)+')';
@@ -627,4 +679,56 @@ fit(); addEventListener('resize',fit);
 </script>
 """
 
-components.html(GAME_HTML, height=724, scrolling=False)
+# ---------- bảng xếp hạng dùng chung (lưu trên server trong scores.json) ----------
+BASE = Path(__file__).parent
+SCORES = BASE / "scores.json"
+FRONT = BASE / "game_frontend"
+
+
+def load_scores():
+    try:
+        data = json.loads(SCORES.read_text(encoding="utf-8"))
+        return [d for d in data if isinstance(d, dict) and "name" in d and "score" in d]
+    except Exception:
+        return []
+
+
+def save_score(name, score):
+    name = str(name or "").strip()[:16]
+    try:
+        score = int(score)
+    except Exception:
+        return
+    if not name or score <= 0 or score > 999999:
+        return
+    data = load_scores()
+    for d in data:
+        if d["name"] == name:
+            d["score"] = max(d["score"], score)
+            break
+    else:
+        data.append({"name": name, "score": score})
+    data.sort(key=lambda d: d["score"], reverse=True)
+    try:
+        tmp = SCORES.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data[:200], ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, SCORES)
+    except Exception:
+        pass
+
+
+PAGE = ("<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'></head><body>"
+        + GAME_HTML + "</body></html>")
+FRONT.mkdir(exist_ok=True)
+index = FRONT / "index.html"
+if not index.exists() or index.read_text(encoding="utf-8") != PAGE:
+    index.write_text(PAGE, encoding="utf-8")
+
+game = components.declare_component("choc_cho", path=str(FRONT))
+result = game(board=load_scores()[:20], key="game", default=None)
+
+if isinstance(result, dict) and result.get("sid") and result["sid"] != st.session_state.get("last_sid"):
+    st.session_state["last_sid"] = result["sid"]
+    save_score(result.get("name"), result.get("score"))
+    st.rerun()
