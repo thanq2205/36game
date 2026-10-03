@@ -1,0 +1,4 @@
+accounts.json
+game_frontend/
+.streamlit/secrets.toml
+__pycache__/
