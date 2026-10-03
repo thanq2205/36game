@@ -1,0 +1,14 @@
+-- Chạy trong Supabase: SQL Editor -> New query -> Run
+-- Bảng tài khoản (cũng là bảng xếp hạng: mỗi tài khoản có điểm cao nhất)
+create table if not exists accounts (
+  key        text primary key,          -- tên viết thường, dùng để so khớp
+  name       text not null,             -- tên hiển thị
+  pw_hash    text not null,             -- mật khẩu đã băm (PBKDF2), không lưu mật khẩu gốc
+  salt       text not null,
+  avatar     text default 'e:🙂',       -- 'e:<emoji>' hoặc ảnh jpeg nhỏ dạng data URL
+  score      int  not null default 0,
+  token_hash text default '',           -- token đăng nhập (đã băm) của các thiết bị
+  created_at timestamptz default now()
+);
+create index if not exists accounts_score_idx on accounts (score desc);
+alter table accounts enable row level security;   -- không mở policy: chỉ server (service_role key) truy cập được
