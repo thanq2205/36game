@@ -93,16 +93,17 @@ GAME_HTML = r"""
     <div id="vGuide" style="display:none"><h1>Hướng dẫn</h1><div id="guide">
       ← → : đổi làn<br>↑ / Space : nhảy<br>↓ / S : cúi, trượt<br>
       Xe tải, xe rơm, máy cày: nhảy lên nóc chạy<br>Trâu, đá, khúc gỗ, hàng rào, xe máy, mương: nhảy qua<br>Cổng tre, cành cây thấp: cúi xuống<br>Vịt, xe cút kít, gạch, chum: nhảy qua<br>Cây, tường rơm cao: không nhảy được, đổi làn<br>Space: bỏ qua đoạn mở đầu · M: tắt tiếng<br>
+      Nhặt bóng bay, cánh hoặc jetpack: bay lên trời, không sợ vật cản dưới đất. Trên trời có chim, diều, máy bay: ↑ ↓ đổi độ cao, ← → đổi làn để né, đụng là thua. Gần hết giờ bay có tiếng bíp, hạ cánh được bất tử vài giây. Chó mặc áo choàng Superman cũng bay đuổi theo!<br>
       <span style="color:#b71c1c">Đụng 1 lần là chó cắn!</span></div>
       <button class="btn" id="bk1">◀ Quay lại</button></div>
     <div id="vRank" style="display:none"><h1>Xếp hạng</h1><div id="rankMe"></div><div id="rank"></div><button class="btn" id="bk2">◀ Quay lại</button></div>
     <div id="vDevLogin" style="display:none"><h1>Dev</h1><input class="inp" id="dpw" type="password" placeholder="Mật khẩu dev" data-enter="dlogin"><div class="dmsg" id="dmsg1"></div>
       <button class="btn g" id="dlogin">Vào</button><button class="btn" id="bk3">◀ Quay lại</button></div>
-    <div id="vDev" style="display:none"><h1>Dev</h1><div class="dmsg" id="dmsg2"></div>
+    <div id="vDev" style="display:none"><h1>Dev</h1><div class="dmsg" id="dstore"></div><div class="dmsg" id="dmsg2"></div>
       <div class="dsec">Cheat (khi dùng cheat, điểm không lên bảng)</div><div id="dcheat"></div>
       <div class="dsec">Quản lý bảng xếp hạng</div><div id="dboard"></div>
       <input class="inp" id="dname" placeholder="Tên tài khoản"><input class="inp" id="dscore" type="number" placeholder="Điểm">
-      <button class="btn sm" id="dset">Đặt điểm (boost)</button><button class="btn sm" id="ddel">Xóa tài khoản</button><button class="btn sm" id="dclr">Reset điểm tất cả</button>
+      <button class="btn sm" id="dset">Đặt điểm (boost)</button><button class="btn sm" id="ddel">Xóa tài khoản</button>
       <button class="btn" id="dout">Đăng xuất dev</button><button class="btn" id="bk4">◀ Quay lại</button></div>
     <div id="vAuth" style="display:none"><h1 id="atitle">Đăng nhập</h1>
       <input class="inp" id="au" maxlength="16" placeholder="Tên đăng nhập (3-16 ký tự)" autocomplete="username" data-enter="asub">
@@ -166,7 +167,7 @@ function applyUser(u){
 window.addEventListener('message',e=>{const d=e.data; if(d&&d.type==='streamlit:render'){const a=d.args||{};
   if(Array.isArray(a.emojis)&&a.emojis.length&&!EMOJIS.length){EMOJIS=a.emojis; buildEmo();}
   if(Array.isArray(a.board))BOARD=a.board;
-  applyUser(a.user);
+  applyUser(a.user); STORAGE=a.storage||'';
   if(a.token&&a.token_id!==lastTok){lastTok=a.token_id; saveCred(a.user?a.user.name:'',a.token);}
   else if(a.user){const c=loadCred(); if(c&&c.name!==a.user.name)saveCred(a.user.name,c.token);}
   if(a.msg&&a.msg.id!==lastMsg){lastMsg=a.msg.id; showMsg(a.msg.t,a.msg.ok); if(a.msg.clear)clearCred(); if(a.msg.go)view(a.msg.go);}
@@ -235,7 +236,7 @@ let delArm=0; $('dlBtn').onclick=()=>{const p=$('dl0').value; if(!p){showMsg('Nh
   if(Date.now()-delArm<5000){act('delete',{password:p}); delArm=0; $('dlBtn').textContent='Xóa tài khoản'; $('dl0').value='';}
   else{delArm=Date.now(); $('dlBtn').textContent='Bấm lần nữa để XÓA VĨNH VIỄN'; setTimeout(()=>{if(Date.now()-delArm>=4900)$('dlBtn').textContent='Xóa tài khoản';},5000);}};
 /* ---- DEV: mật khẩu kiểm tra ở server (st.secrets), cheat chỉ bật khi server xác nhận ---- */
-let DEV=false, DEVMSG='', cheated=false;
+let DEV=false, DEVMSG='', cheated=false, STORAGE='';
 const CH={fly:false,god:false,mult:1,slow:false,start:0};
 const cheatsOn=()=>CH.fly||CH.god||CH.mult>1||CH.slow||CH.start>0;
 function devAct(action,extra){setValue(Object.assign({action:action,sid:'d-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)},extra||{}));}
@@ -252,6 +253,9 @@ function renderDev(){
   BOARD.forEach(r=>{const row=document.createElement('div'); row.className='drow'; const t=document.createElement('span'); t.textContent=r.name+' — '+r.score;
     const x=document.createElement('button'); x.textContent='✕'; x.onclick=()=>devAct('dev_delete',{name:r.name}); row.appendChild(t); row.appendChild(x); b.appendChild(row);});
   $('dmsg2').textContent=DEVMSG;
+  const ds=$('dstore'), ok=STORAGE==='supabase';
+  ds.textContent=ok?'Lưu trữ: Supabase. Điểm giữ vĩnh viễn, không bao giờ reset.':'Lưu trữ: file tạm. Sẽ MẤT khi app khởi động lại, hãy cấu hình Supabase!';
+  ds.style.color=ok?'#2e7d32':'#b71c1c';
 }
 $('dv').onclick=()=>{if(DEV){renderDev();view('vDev');}else{$('dpw').value='';$('dmsg1').textContent='';view('vDevLogin');$('dpw').focus();}};
 $('dlogin').onclick=()=>{devAct('dev_login',{password:$('dpw').value}); $('dpw').value=''; $('dmsg1').textContent='Đang kiểm tra...';};
@@ -259,7 +263,6 @@ $('bk3').onclick=()=>view('vMain'); $('bk4').onclick=()=>view('vMain');
 $('dout').onclick=()=>{devAct('dev_logout'); Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0}); view('vMain');};
 $('dset').onclick=()=>{const n=$('dname').value.trim(), v=parseInt($('dscore').value,10); if(n&&v>0)devAct('dev_set',{name:n,score:v});};
 $('ddel').onclick=()=>{const n=$('dname').value.trim(); if(n)devAct('dev_delete',{name:n});};
-let clrArm=0; $('dclr').onclick=()=>{if(Date.now()-clrArm<4000){devAct('dev_clear');clrArm=0;$('dclr').textContent='Reset điểm tất cả';}else{clrArm=Date.now();$('dclr').textContent='Bấm lần nữa để reset TẤT CẢ';}};
 let lastRef=0;
 function refreshBoard(){const n=Date.now(); if(n-lastRef<5000)return; lastRef=n; setValue({action:'refresh',sid:'r-'+n});}
 $('rk').onclick=()=>{renderRank();view('vRank');refreshBoard();}; $('bk2').onclick=()=>view('vMain');
@@ -270,33 +273,59 @@ const wrap=$('wrap'), W=()=>wrap.clientWidth, H=()=>wrap.clientHeight;
 /* ================= ÂM THANH ================= */
 let AC=null, muted=false, quiet=false, musicT=null;
 const ac=()=>{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();return AC};
-function nz(d,vol,f,q,att,type){
+let BUS=null;
+function OUT(){ if(!BUS){ BUS=AC.createDynamicsCompressor(); BUS.threshold.value=-14; BUS.knee.value=18; BUS.ratio.value=6; BUS.attack.value=.003; BUS.release.value=.2;
+  const sh=AC.createWaveShaper(), cv=new Float32Array(1025); for(let i=0;i<1025;i++)cv[i]=Math.tanh((i/512-1)*1.3); sh.curve=cv;   // chặn đỉnh mềm, không bao giờ rè vỡ tiếng
+  const m=AC.createGain(); m.gain.value=.8; BUS.connect(sh); sh.connect(m); m.connect(AC.destination); } return BUS; }
+function nz(d,vol,f,q,att,type,dly){
   if(muted||quiet||!AC)return;
   const n=Math.floor(AC.sampleRate*d), b=AC.createBuffer(1,n,AC.sampleRate), a=b.getChannelData(0);
   for(let i=0;i<n;i++)a[i]=Math.random()*2-1;
   const s=AC.createBufferSource(); s.buffer=b;
   const fl=AC.createBiquadFilter(); fl.type=type||'bandpass'; fl.frequency.value=f; fl.Q.value=q||1;
-  const g=AC.createGain(), T=AC.currentTime;
+  const g=AC.createGain(), T=AC.currentTime+(dly||0);
   g.gain.setValueAtTime(.0001,T); g.gain.linearRampToValueAtTime(vol,T+(att||.02)); g.gain.exponentialRampToValueAtTime(.0001,T+d);
-  s.connect(fl); fl.connect(g); g.connect(AC.destination); s.start();
+  s.connect(fl); fl.connect(g); g.connect(OUT()); s.start(T);
 }
-function tn(f1,f2,d,type,vol,fc){
+function tn(f1,f2,d,type,vol,fc,dly){
   if(muted||quiet||!AC)return;
-  const o=AC.createOscillator(), fl=AC.createBiquadFilter(), g=AC.createGain(), T=AC.currentTime;
+  const o=AC.createOscillator(), fl=AC.createBiquadFilter(), g=AC.createGain(), T=AC.currentTime+(dly||0);
   o.type=type; o.frequency.setValueAtTime(f1,T); o.frequency.exponentialRampToValueAtTime(Math.max(f2,1),T+d);
   fl.type='bandpass'; fl.frequency.value=fc||2000; fl.Q.value=1.5;
   g.gain.setValueAtTime(vol,T); g.gain.exponentialRampToValueAtTime(.0001,T+d);
-  o.connect(fl); fl.connect(g); g.connect(AC.destination); o.start(); o.stop(T+d);
+  o.connect(fl); fl.connect(g); g.connect(OUT()); o.start(T); o.stop(T+d);
 }
-function bark1(v){tn(380,200,.16,'sawtooth',.3*v,900); tn(760,400,.12,'square',.06*v,1800); nz(.1,.3*v,1400,1.5,.004); jaw=.6;}
+/* giọng (chó sủa, người hét): sóng răng cưa + bộ lọc formant + rung giọng + hơi thở */
+function voice(o){
+  if(muted||quiet||!AC)return;
+  const T=AC.currentTime+(o.dly||0), d=o.d, osc=AC.createOscillator(), lf=AC.createOscillator(), lg=AC.createGain(), mix=AC.createGain(), g=AC.createGain();
+  osc.type='sawtooth'; osc.frequency.setValueAtTime(o.f0,T);
+  if(o.fm)osc.frequency.linearRampToValueAtTime(o.fm,T+d*(o.tm||.4));
+  osc.frequency.linearRampToValueAtTime(o.f1||o.f0,T+d);
+  lf.frequency.value=o.vib||6; lg.gain.value=o.vd||0; lf.connect(lg); lg.connect(osc.frequency);
+  mix.gain.value=o.boost||4;
+  o.fmt.forEach((fr,i)=>{const b=AC.createBiquadFilter(), fg=AC.createGain(); b.type='bandpass'; b.Q.value=o.q||6;
+    b.frequency.setValueAtTime(fr[0],T); b.frequency.linearRampToValueAtTime(fr[1],T+d); fg.gain.value=[1,.6,.3][i]||.2; osc.connect(b); b.connect(fg); fg.connect(mix);});
+  const at=o.att||.02, hold=o.hold||.6;
+  g.gain.setValueAtTime(.0001,T); g.gain.linearRampToValueAtTime(o.vol,T+at); g.gain.setValueAtTime(o.vol,T+d*hold); g.gain.exponentialRampToValueAtTime(.0001,T+d);
+  mix.connect(g); g.connect(OUT()); osc.start(T); lf.start(T); osc.stop(T+d+.05); lf.stop(T+d+.05);
+  if(o.breath)nz(d,o.breath,o.bf||2800,1,at,'bandpass',o.dly||0);
+}
+function bark1(v,p,dly){ p=p||1; dly=dly||0;
+  voice({f0:430*p,fm:560*p,tm:.18,f1:250*p,d:.2,vol:.8*v,att:.005,hold:.35,vib:55,vd:60*p,fmt:[[780,520],[1350,1000],[2500,2100]],q:5,boost:3,dly});
+  voice({f0:215*p,f1:130*p,d:.18,vol:.4*v,att:.005,hold:.3,fmt:[[420,320],[900,700]],q:3,boost:3,dly});
+  nz(.07,.35*v,1700,1.2,.003,'bandpass',dly);
+  setTimeout(()=>{jaw=.6},dly*1000);
+}
 const sfx={
-  jump:()=>{nz(.16,.22,900,1,.02); tn(200,320,.12,'sine',.08,600)},
+  jump:()=>{nz(.16,.22,900,1,.02); tn(200,320,.12,'sine',.08,600); voice({f0:210,f1:290,d:.12,vol:.18,att:.01,hold:.3,fmt:[[500,600],[1100,1300]],q:4,breath:.06})},
   land:()=>nz(.12,.45,300,.7,.004,'lowpass'),
-  bark:()=>{bark1(1); setTimeout(()=>bark1(.9),210); setTimeout(()=>bark1(.8),420)},
+  bark:(v)=>{ v=v==null?1:v; const n=2+Math.floor(Math.random()*3), p=.85+Math.random()*.3; let t=0;
+    for(let i=0;i<n;i++){ bark1(v*(1-i*.06),p*(1+(Math.random()-.5)*.1),t); t+=.19+Math.random()*.1; if(i===1&&Math.random()<.3)t+=.15; } },
   growl:()=>{ if(muted||quiet||!AC)return; const T=AC.currentTime,o=AC.createOscillator(),l=AC.createOscillator(),lg=AC.createGain(),
       g=AC.createGain(),f=AC.createBiquadFilter(); o.type='sawtooth'; o.frequency.value=78; l.frequency.value=26; lg.gain.value=.12;
       f.type='lowpass'; f.frequency.value=380; g.gain.setValueAtTime(.16,T); g.gain.linearRampToValueAtTime(.001,T+.9);
-      l.connect(lg); lg.connect(g.gain); o.connect(f); f.connect(g); g.connect(AC.destination); o.start();l.start();o.stop(T+.9);l.stop(T+.9); },
+      l.connect(lg); lg.connect(g.gain); o.connect(f); f.connect(g); g.connect(OUT()); o.start();l.start();o.stop(T+.9);l.stop(T+.9); },
   pant:()=>{[0,.13,.26,.39].forEach(t=>setTimeout(()=>nz(.1,.13,3200,2,.012),t*1000))},
   chomp:()=>{nz(.09,.32,650,2,.004); tn(190,90,.09,'square',.09,500); setTimeout(()=>{nz(.09,.28,700,2,.004);tn(170,80,.09,'square',.08,500)},130)},
   breath:()=>{nz(.34,.16,1700,.8,.2); setTimeout(()=>nz(.4,.19,1200,.7,.06),330)},
@@ -316,11 +345,19 @@ const sfx={
   moto:()=>{tn(110,240,.5,'sawtooth',.08,600); setTimeout(()=>tn(240,120,.4,'sawtooth',.07,600),450)},
   crash:()=>{nz(.4,.6,700,.5,.01,'lowpass'); tn(140,35,.4,'sawtooth',.25,300)},
   splash:()=>nz(.6,.4,3500,.6,.05),
-  scream:()=>{ if(muted||quiet||!AC)return; const T=AC.currentTime,o=AC.createOscillator(),l=AC.createOscillator(),lg=AC.createGain(),
-      g=AC.createGain(),f=AC.createBiquadFilter(); o.type='sawtooth'; o.frequency.setValueAtTime(600,T); o.frequency.linearRampToValueAtTime(900,T+.3);
-      l.frequency.value=8; lg.gain.value=50; f.type='bandpass'; f.frequency.value=1400; f.Q.value=.8;
-      g.gain.setValueAtTime(.18,T); g.gain.exponentialRampToValueAtTime(.001,T+1);
-      l.connect(lg); lg.connect(o.frequency); o.connect(f); f.connect(g); g.connect(AC.destination); o.start();l.start();o.stop(T+1);l.stop(T+1); },
+  scream:()=>{
+    voice({f0:480,fm:1000,tm:.18,f1:700,d:1.5,vol:.28,att:.03,hold:.7,vib:7,vd:45,fmt:[[800,1000],[1600,1900],[2900,3100]],q:7,boost:4,breath:.1,bf:3200});
+    voice({f0:497,fm:1035,tm:.18,f1:722,d:1.5,vol:.17,att:.03,hold:.7,vib:9,vd:55,fmt:[[800,1000],[1600,1900],[2900,3100]],q:7,boost:4}); },
+  yell:(v,ex)=>{ v=v||1; const p=.9+Math.random()*.2;
+    if(ex)voice({f0:330*p,fm:640*p,tm:.3,f1:560*p,d:.7,vol:.4*v,att:.04,hold:.6,vib:6,vd:25,fmt:[[600,850],[1200,1500],[2600,2800]],q:6,breath:.05});
+    else voice({f0:520*p,fm:820*p,tm:.25,f1:480*p,d:.55,vol:.45*v,att:.02,hold:.5,vib:8,vd:40,fmt:[[800,950],[1500,1800],[2900,3000]],q:7,breath:.08}); },
+  agh:()=>voice({f0:380,fm:700,tm:.2,f1:300,d:.35,vol:.5,att:.01,hold:.4,vib:12,vd:50,fmt:[[700,600],[1200,1000],[2500,2300]],q:5,breath:.12}),
+  powerup:()=>{[523,659,784,1047,1319].forEach((f,i)=>{tn(f,f,.22,'triangle',.16,2400,i*.07); tn(f*2,f*2,.14,'sine',.04,4000,i*.07);}); nz(.5,.15,3000,.8,.1,'highpass')},
+  flap:()=>{nz(.18,.18,450,1.2,.05,'lowpass'); nz(.12,.1,1500,1,.03,'bandpass',.1)},
+  jet:()=>{nz(.4,.14,900,.6,.08,'lowpass'); tn(110,90,.4,'sawtooth',.06,400)},
+  wind:()=>nz(.9,.1,1200,.5,.3,'bandpass'),
+  warn:()=>tn(1000,1000,.09,'square',.07,2000),
+  caw:()=>{tn(900,500,.18,'sawtooth',.12,1500); tn(850,450,.2,'sawtooth',.1,1400,.22)},
   bite:()=>{nz(.2,.7,2200,1,.005); tn(220,60,.25,'square',.15,600); nz(.35,.4,600,1,.01,'lowpass')},
   over:()=>tn(400,80,1,'triangle',.2,1000)
 };
@@ -336,10 +373,10 @@ function ambience(on){
   const s=AC.createBufferSource(); s.buffer=b; s.loop=true;
   const f=AC.createBiquadFilter(); f.type='bandpass'; f.frequency.value=500; f.Q.value=.6;
   const g=AC.createGain(); g.gain.value=.05; const l=AC.createOscillator(), lg=AC.createGain(); l.frequency.value=.18; lg.gain.value=.03;
-  l.connect(lg); lg.connect(g.gain); s.connect(f); f.connect(g); g.connect(AC.destination); s.start(); l.start(); amb.push(s,l);
+  l.connect(lg); lg.connect(g.gain); s.connect(f); f.connect(g); g.connect(OUT()); s.start(); l.start(); amb.push(s,l);
   const c=AC.createOscillator(), cg=AC.createGain(), cl=AC.createOscillator(), clg=AC.createGain();
   c.type='sine'; c.frequency.value=4300; cg.gain.value=.004; cl.type='square'; cl.frequency.value=32; clg.gain.value=.004;
-  cl.connect(clg); clg.connect(cg.gain); c.connect(cg); cg.connect(AC.destination); c.start(); cl.start(); amb.push(c,cl);
+  cl.connect(clg); clg.connect(cg.gain); c.connect(cg); cg.connect(OUT()); c.start(); cl.start(); amb.push(c,cl);
   ambT=setInterval(()=>{const r=Math.random(); if(r<.6)chirp(); else if(r<.66)rooster(); else if(r<.72)chirp();},2000);
 }
 $('mute').onclick=()=>{muted=!muted;$('mute').textContent=muted?'🔇':'🔊'; if(ambWanted)ambience(!muted);};
@@ -554,7 +591,8 @@ let bfv=0;
 const LANES=[-2,0,2], SPD0=.16, SPDMAX=.40, DY=110;
 let lane=1,y=0,vy=0,floorY=0,speed=SPD0,score=0,alive=false,items=[],timer=0,gap=4,shake=0,t=0,jaw=0,
     duckT=0,dying=0,dyk=0,stepS=0,breathT=0,pantT=0,barkT=200,growlT=150,poolS=0,wasAir=false,showoff=false,chewT=0,
-    cx=0,cy=3.6,cz=6.5,lx=0,ly=1.2,lz=-6;
+    cx=0,cy=3.6,cz=6.5,lx=0,ly=1.2,lz=-6,
+    flyT=0,flyType='',flyAlt=0,flyLv=0,invT=0,puCool=20,boostK=1,yellT=300,skyT=0,dieY=0,dieV=0,dogY=0;
 function cast(g){g.traverse(o=>{if(o.isMesh)o.castShadow=true;});}
 road.receiveShadow=true; field.receiveShadow=true; cast(player); cast(dog);
 mouthBone.scale.set(1.5,1.5,1.5);
@@ -566,6 +604,52 @@ const pile=new THREE.Group(); pile.visible=false; scene.add(pile);
  const sp=cyl(.03,.03,.7,bm,-.45,.03,.1,5); sp.rotation.z=Math.PI/2; pile.add(sp);
  for(const [a,z] of [[.5,.55],[-.4,-.5]]){const b=boneMesh(); b.scale.set(1.3,1.3,1.3); b.rotation.y=a; b.position.set(0,.1,z); pile.add(b);}}
 function wheel(r,x,y,z,w){const m=cyl(r,r,w||.2,0x212121,x,y,z,10);m.rotation.z=Math.PI/2;return m;}
+/* ===== vật phẩm bay + vật cản trên trời + áo choàng Superman của chó ===== */
+const PUS={balloon:{t:600,alt:5.2,col:0xff5252},wings:{t:780,alt:6.6,col:0xffffff},jet:{t:480,alt:8.4,col:0xff9100}};
+const capeG=new THREE.Group(); capeG.position.set(0,1.05,-.6); capeG.visible=false; dog.add(capeG);
+const capeS=[]; {let par=capeG; for(let i=0;i<3;i++){const sg=new THREE.Group(); if(i)sg.position.z=.5; sg.add(bx(.62+i*.05,.04,.5,i===1?0xb71c1c:0xd50000,0,0,.25)); par.add(sg); par=sg; capeS.push(sg);}
+  capeS[0].add(bx(.2,.02,.2,0xffd600,0,.03,.25));}
+const fxBal=new THREE.Group(), fxWing=new THREE.Group(), fxJet=new THREE.Group();
+{const b=new THREE.Mesh(new THREE.SphereGeometry(.55,9,8),L(0xff5252)); b.scale.y=1.25; b.position.set(.45,3.3,0); fxBal.add(b);
+ fxBal.add(bx(.12,.12,.12,0xb71c1c,.45,2.6,0)); fxBal.add(cyl(.012,.012,1.1,0xeeeeee,.45,2.05,0,3));}
+const wingL=new THREE.Group(), wingR=new THREE.Group(); wingL.position.set(-.2,1.35,.3); wingR.position.set(.2,1.35,.3);
+for(const [w,sg] of [[wingL,-1],[wingR,1]]){w.add(bx(1.1,.08,.4,0xffffff,sg*.55,0,0)); w.add(bx(.9,.07,.35,0xe3f2fd,sg*.5,.0,.28)); w.add(bx(.7,.06,.3,0xbbdefb,sg*.45,0,.52));}
+fxWing.add(wingL); fxWing.add(wingR);
+const flames=[];
+for(const x of [-.2,.2]){fxJet.add(cyl(.12,.12,.8,x<0?0xff9100:0xff6d00,x,1.3,.4,8)); fxJet.add(cyl(0,.12,.25,0xd32f2f,x,1.82,.4,8));
+  const f=new THREE.Mesh(new THREE.ConeGeometry(.1,.7,6),new THREE.MeshBasicMaterial({color:0xffc107})); f.rotation.x=Math.PI; f.position.set(x,.58,.4); fxJet.add(f); flames.push(f);}
+for(const f of [fxBal,fxWing,fxJet]){f.visible=false; player.add(f);}
+function mkPU(kind,l){
+  const P=PUS[kind], g=new THREE.Group(), body=new THREE.Group(); g.add(body);
+  body.add(new THREE.Mesh(new THREE.SphereGeometry(.85,10,8),new THREE.MeshBasicMaterial({color:P.col,transparent:true,opacity:.22,depthWrite:false})));
+  if(kind==='balloon'){const b=new THREE.Mesh(new THREE.SphereGeometry(.42,9,8),L(0xff5252)); b.scale.y=1.25; b.position.y=.2; body.add(b); body.add(bx(.12,.12,.12,0xb71c1c,0,-.38,0)); body.add(cyl(.01,.01,.7,0xeeeeee,0,-.72,0,3));}
+  else if(kind==='wings'){for(const sg of [-1,1]){body.add(bx(.7,.08,.3,0xffffff,sg*.4,.1,0)); body.add(bx(.55,.07,.26,0xe3f2fd,sg*.35,.05,.22)); body.add(bx(.4,.06,.22,0xbbdefb,sg*.3,0,.42));} body.add(bx(.22,.22,.1,0xffd600,0,.1,0));}
+  else{body.add(cyl(.2,.2,.9,0xff9100,0,0,0,8)); body.add(cyl(0,.2,.4,0xd32f2f,0,.65,0,8)); for(const x of [-.25,.25])body.add(bx(.04,.3,.25,0xd32f2f,x,-.35,0)); const f=new THREE.Mesh(new THREE.ConeGeometry(.14,.5,6),new THREE.MeshBasicMaterial({color:0xffc107})); f.rotation.x=Math.PI; f.position.y=-.7; body.add(f);}
+  body.position.y=1.4; g.position.set(LANES[l],0,-80); scene.add(g); items.push({m:g,type:'pu',pu:kind,body,hz:.8,top:0,solid:false});
+}
+function mkSky(kind,l,ay,z){
+  const g=new THREE.Group(), o={m:g,type:kind,sky:true,ay,hz:.5,ph:Math.random()*6};
+  if(kind==='crow'){const m=0x263238; g.add(bx(.3,.26,.8,m,0,0,0)); g.add(bx(.22,.22,.24,m,0,.1,.5)); g.add(bx(.07,.07,.2,0xffa000,0,.06,.72));
+    const wl=new THREE.Group(), wr=new THREE.Group(); wl.position.x=-.15; wr.position.x=.15; wl.add(bx(.9,.04,.45,m,-.45,0,0)); wr.add(bx(.9,.04,.45,m,.45,0,0)); g.add(wl); g.add(wr); g.add(bx(.2,.04,.4,m,0,0,-.55));
+    g.scale.set(1.6,1.6,1.6); o.wl=wl; o.wr=wr;}
+  else if(kind==='kite'){const k=bx(1,1,.04,[0xe91e63,0x00bcd4,0xffeb3b][Math.floor(Math.random()*3)],0,0,0); k.rotation.z=Math.PI/4; g.add(k); g.add(bx(.04,1.4,.05,0x6d4c41,0,0,.03));
+    for(let i=0;i<4;i++)g.add(bx(.22,.1,.03,i%2?0xffffff:0xff5252,0,-.85-i*.28,0)); o.hz=.55; g.scale.set(1.3,1.3,1.3);}
+  else{g.add(bx(.45,.45,1.7,0xe53935,0,0,0)); g.add(bx(2.4,.07,.55,0xffffff,0,.05,.1)); g.add(bx(.9,.06,.3,0xffffff,0,.1,-.75)); g.add(bx(.06,.4,.3,0xe53935,0,.3,-.75));
+    g.add(bx(.3,.22,.35,0x81d4fa,0,.3,.2)); const pr=bx(1.1,.07,.05,0x212121,0,0,.9); g.add(pr); o.prop=pr; o.hz=.95;}
+  cast(g); g.position.set(LANES[l],ay,-(z||55)); scene.add(g); items.push(o);
+}
+function spawnSky(z){
+  const alts=[flyAlt-2.5,flyAlt,flyAlt+2.5], kinds=['crow','crow','kite','plane'];
+  const n=Math.random()<.35?2:1, l0=Math.floor(Math.random()*3);
+  for(let i=0;i<n;i++)mkSky(kinds[Math.floor(Math.random()*4)],(l0+i*(1+Math.floor(Math.random()*2)))%3,alts[Math.floor(Math.random()*3)],z);
+}
+function startFly(kind){
+  const P=PUS[kind]; flyT=P.t; flyType=kind; flyAlt=P.alt; flyLv=0; skyT=70; puCool=0;
+  fxBal.visible=kind==='balloon'; fxWing.visible=kind==='wings'; fxJet.visible=kind==='jet'; capeG.visible=true;
+  sfx.powerup(); sfx.yell(1,true); sfx.bark(.8);
+  spawnSky(36); spawnSky(75);
+}
+function stopFly(){ flyT=0; fxBal.visible=fxWing.visible=fxJet.visible=false; }
 const HT={stump:.9,sheep:.9,campfire:.8,bike:1.0,tires:.9,hedge:1.0,cone:.7,firewood:1.1,barrels:1.0,fence:.7,buffalo:1.7,pit:.35,log:.65,rock:.95,moto:1.3,ducks:.5,cart:1.2,bricks:1.0,jars:1.0};
 function mk(type,l,zo){
   const g=new THREE.Group(); let hz=.6, top=0, solid=false;
@@ -623,6 +707,8 @@ function mk(type,l,zo){
 const OB=['fence','log','rock','moto','buffalo','truck','haycart','tractor','pit','gate','tree','tree','ducks','cart','bricks','jars','branch','haywall','stump','sheep','campfire','tent','bike','tires','hedge','hive','cone','boulder','firewood','barrels'];
 const LOWS=['fence','log','rock','ducks','cart','bricks','jars','pit','stump','sheep','campfire','bike','tires','hedge','cone','firewood','barrels'];
 function spawn(){
+  if(flyT<=0&&invT<=0&&++puCool>36&&Math.random()<.14){ puCool=0; const r=Math.random(), l=Math.floor(Math.random()*3);
+    mkPU(r<.45?'balloon':(r<.8?'wings':'jet'),l); if(Math.random()<.5)mk(LOWS[Math.floor(Math.random()*LOWS.length)],(l+1)%3,6); return; }
   const lv=Math.min(1,(speed-SPD0)/(SPDMAX-SPD0)), l=Math.floor(Math.random()*3), pk=a=>a[Math.floor(Math.random()*a.length)];
   if(Math.random()<.15+lv*.25){                       // đủ 3 làn có vật cản, chỉ 1 làn nhảy qua được
     const free=Math.floor(Math.random()*3);
@@ -642,11 +728,13 @@ function reset(){
   player.position.set(0,0,0);player.rotation.set(0,0,0);player.scale.y=1;player.visible=true;
   dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;setEyes(true);mouthBone.visible=false;pile.visible=false;
   drops.forEach(d=>d.m.visible=false); pool.visible=false; boneFly.visible=false; $('blood').style.opacity=0;
+  stopFly(); flyLv=0; invT=0; puCool=20; boostK=1; dieY=0; dieV=0; dogY=0; yellT=300; skyT=0; capeG.visible=false; dog.rotation.x=0; player.visible=true;
   cx=0;cy=3.6;cz=6.5;lx=0;ly=1.2;lz=-6;
 }
 function end(type){
-  alive=false; dying=DY;
+  alive=false; dying=DY; dieY=y; dieV=0; y=0; stopFly(); invT=0; boostK=1; dogY=0; capeG.visible=false; dog.rotation.x=0;
   if(type==='pit')sfx.splash(); else sfx.crash();
+  if(type==='crow')sfx.caw();
   sfx.scream(); sfx.growl(); sfx.bark();
 }
 function bloodBurst(){
@@ -659,8 +747,8 @@ function showOver(){
   $('best').textContent='Điểm cao: '+best; $('go').textContent='↻ Chơi lại'; overMode=true; view('vMain'); $('msg').style.display='flex'; sfx.over(); submitScore();
 }
 const left=()=>{if(alive&&lane>0)lane--}, right=()=>{if(alive&&lane<2)lane++};
-const jump=()=>{if(alive&&y<=floorY+.01){vy=.34;sfx.jump();}};
-const duck=()=>{if(!alive)return; if(y>floorY+.01)vy=-.4; else if(duckT===0){duckT=45;sfx.swoosh();}};
+const jump=()=>{if(alive&&flyT>0){if(flyLv<1){flyLv++;sfx.swoosh();}return;} if(alive&&y<=floorY+.01){vy=.34;sfx.jump();}};
+const duck=()=>{if(!alive)return; if(flyT>0){if(flyLv>-1){flyLv--;sfx.swoosh();}return;} if(y>floorY+.01)vy=-.4; else if(duckT===0){duckT=45;sfx.swoosh();}};
 addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT'){const bt=e.target.dataset&&e.target.dataset.enter; if(e.key==='Enter'&&bt)$(bt).click(); return;}
   if(introT>25&&!introLoop&&!e.repeat){endIntro();return;}
@@ -735,7 +823,7 @@ function introStep(){
     if(k>85)dog.scale.y+=(1-dog.scale.y)*.15; if(k===88)setEyes(true); if(k===90)sfx.growl();
     player.rotation.z=Math.sin(k*.5)*.05;
   } else if(k<135){                           // chó bật dậy sủa, nhóc giật mình
-    if(k===105){sfx.bark(); sfx.yelp();} if(k===118)sfx.bark();
+    if(k===105){sfx.bark(); sfx.yell();} if(k===118)sfx.bark();
     dog.scale.y+=(1-dog.scale.y)*.3; dog.position.y=Math.abs(Math.sin((k-105)*.4))*.25; jaw=.6*Math.abs(Math.sin(k*.6));
     player.rotation.z=0; player.position.y=Math.max(0,Math.sin((k-105)/12*Math.PI)*.5); player.position.x+=(-1.8-player.position.x)*.15;
     lim.armR.rotation.x=-2.4; lim.armL.rotation.x=-2.4;
@@ -755,16 +843,16 @@ wrap.addEventListener('click',()=>{if(introT>25&&!introLoop)endIntro();});      
 
 function loop(){
   requestAnimationFrame(loop); t+=.016;
-  const mv=introT>0?introMv:(alive?speed:((dying>0||showoff)?0:.09));
+  const mv=introT>0?introMv:(alive?speed*boostK:((dying>0||showoff)?0:.09));
   if(introT>0){introStep();}
   else if(dying>0){
     const k=DY-dying; dying--; dyk=k; shake=(k>25&&k<60)?5:0;
-    if(k<25){dog.position.z+=(.4-dog.position.z)*.2; dog.position.x+=(player.position.x-dog.position.x)*.2; dog.position.y=floorY+Math.sin(k/25*Math.PI)*.9; jaw=.7;}
+    if(k<25){dog.position.z+=(.4-dog.position.z)*.2; dog.position.x+=(player.position.x-dog.position.x)*.2; dog.position.y=floorY+dieY+Math.sin(k/25*Math.PI)*.9; jaw=.7; dieV+=.035; dieY=Math.max(0,dieY-dieV); player.position.y=dieY; player.rotation.x+=(-.2-player.rotation.x)*.2;}
     else if(k<62){dog.position.set(player.position.x,floorY+.1+Math.abs(Math.sin(k*.6))*.12,.4); dog.rotation.y=Math.sin(k*1.2)*.3; jaw=Math.sin(k*1.5)>0?.6:.05;
       player.rotation.x+=(-1.45-player.rotation.x)*.12; player.position.y=floorY+.18; player.scale.y=1;}
     else{dog.position.x+=(0-dog.position.x)*.06; dog.position.z+=(2.3-dog.position.z)*.06; dog.position.y+=(0-dog.position.y)*.1;
       dog.rotation.y+=(Math.PI-dog.rotation.y)*.08; dhead.rotation.x+=(.45-dhead.rotation.x)*.1; jaw=.15;}
-    if(k===25){bloodBurst(); sfx.bite(); sfx.scream(); sfx.growl();}
+    if(k===25){bloodBurst(); sfx.bite(); sfx.agh(); sfx.growl();}
     if(k===55){player.visible=false; pile.position.set(player.position.x,.05,.2); pile.visible=true; sfx.crash();}
     if(k===62){mouthBone.visible=true; sfx.bark();}
     if(k>30&&k%16===0)sfx.chomp();
@@ -776,23 +864,41 @@ function loop(){
     dog.rotation.y=Math.PI+Math.sin(t*1.6)*.5; dhead.rotation.x=.45+Math.sin(t*5)*.08; jaw=.12+Math.abs(Math.sin(t*9))*.1;
     tail.rotation.z=Math.sin(t*22)*.6; if(++chewT%26===0)sfx.chomp();
   } else if(alive){
-    speed=Math.min(CH.slow?SPD0:SPDMAX,speed+.00004); score+=speed*.25*CH.mult; timer++;
+    speed=Math.min(CH.slow?SPD0:SPDMAX,speed+.00004); score+=speed*.25*CH.mult*(flyT>0?(flyType==='jet'?3:2):1); timer++;
+    boostK+=(((flyT>0&&flyType==='jet')?1.45:1)-boostK)*.05;
+    if(flyT>150&&!CH.fly&&--skyT<=0){skyT=55+Math.floor(Math.random()*30);spawnSky(55);}
     if(timer%Math.max(17,Math.floor(42-(speed-SPD0)*130))===0)spawn();
     player.position.x+=(LANES[lane]-player.position.x)*.2; player.rotation.z=(player.position.x-LANES[lane])*.18;
     let floor=0, dead=null;
     for(let i=items.length-1;i>=0;i--){
-      const o=items[i]; o.m.position.z+=speed*2;
+      const o=items[i]; o.m.position.z+=speed*boostK*2;
       if(!o.snd&&o.m.position.z>-42){o.snd=1; if(o.type==='truck')sfx.horn(); else if(o.type==='buffalo')sfx.moo(); else if(o.type==='haycart')sfx.creak();
         else if(o.type==='tractor')sfx.engine(); else if(o.type==='moto')sfx.moto(); else if(o.type==='ducks')sfx.quack(); else if(o.type==='sheep')sfx.baa(); else if(o.type==='campfire')sfx.fire(); else if(o.type==='cart')sfx.creak();}
       const dz=Math.abs(o.m.position.z-player.position.z), dx=Math.abs(o.m.position.x-player.position.x);
-      if(dx<.9&&dz<o.hz+.35){
+      if(o.pu){ o.m.rotation.y+=.06; o.body.position.y=1.4+Math.sin(t*3+o.m.position.z)*.15;
+        if(flyT<=0&&dx<1.0&&dz<.9&&y<3.4){startFly(o.pu); scene.remove(o.m); items.splice(i,1);}
+        else if(o.m.position.z>12){scene.remove(o.m);items.splice(i,1);}
+        continue; }
+      if(o.sky){ o.m.position.y=o.ay+Math.sin(t*3+o.ph)*.12;
+        if(o.wl){const f=Math.sin(t*16+o.ph)*.8; o.wl.rotation.z=f; o.wr.rotation.z=-f;} if(o.prop)o.prop.rotation.z+=.6; if(o.type==='kite')o.m.rotation.z=Math.sin(t*2+o.ph)*.2;
+        if(flyT>0&&dx<.85&&dz<o.hz+.3){const dd=o.ay-y; if(dd>-.4&&dd<2.0)dead=o;}
+        if(o.m.position.z>12){scene.remove(o.m);items.splice(i,1);}
+        continue; }
+      if(flyT<=0&&dx<.9&&dz<o.hz+.35){
         if(o.top){ if(y>=o.top-.35)floor=Math.max(floor,o.top); else dead=o; }
         else if(o.solid)dead=o;                                        // cây: không nhảy/trượt qua được
         else{ const bad=(o.type==='gate'||o.type==='branch'||o.type==='hive')?(y<2.0&&(duckT===0||y>.01)):y<HT[o.type]; if(bad)dead=o; }
       }
       if(o.m.position.z>12){scene.remove(o.m);items.splice(i,1);}
     }
+    if(invT>0){invT--; dead=null; player.visible=invT%8<5||invT===0;}
     if(dead&&!CH.god&&!CH.fly)end(dead.type);
+    else if(flyT>0){
+      flyT--; const tg=(flyAlt+flyLv*2.5)*Math.min(1,flyT/90); y+=(tg-y)*.1; vy=0; floorY=0; wasAir=true;
+      if(flyT===90||flyT===60||flyT===30)sfx.warn();
+      if(flyType==='wings'&&flyT%24===0)sfx.flap(); else if(flyType==='jet'&&flyT%14===0)sfx.jet(); else if(flyType==='balloon'&&flyT%90===0)sfx.wind();
+      if(flyT===0){stopFly(); y=0; vy=0; invT=150; sfx.land();}
+    }
     else if(CH.fly){y+=(4.4-y)*.08; vy=0; floorY=0; wasAir=true;}
     else{
       floorY=floor; vy-=.02; y+=vy; if(y<=floor){y=floor;vy=0;}
@@ -805,7 +911,9 @@ function loop(){
     dog.position.z=gap; dog.position.x+=(player.position.x-dog.position.x)*.1; tail.rotation.z=Math.sin(t*18)*.5;
     breathT++; if(breathT>=Math.max(42,Math.floor(80-(speed-SPD0)*220))){breathT=0;sfx.breath();}
     pantT++; if(pantT>=60){pantT=0;sfx.pant();}
-    if(--barkT<=0){barkT=200+Math.random()*220;sfx.bark();}
+    dogY+=(((flyT>0)?y*.85:0)-dogY)*.07; capeG.visible=dogY>.25; dog.rotation.x+=((dogY>.25?.25:0)-dog.rotation.x)*.1;
+    if(--barkT<=0){barkT=(flyT>0?90+Math.random()*90:200+Math.random()*220);sfx.bark(1);}
+    if(--yellT<=0){yellT=(flyT>0?160+Math.random()*160:420+Math.random()*500);sfx.yell(1,flyT>0);}
     if(--growlT<=0){growlT=260+Math.random()*200;sfx.growl();}
     $('s').textContent=Math.floor(score);
   }
@@ -813,11 +921,18 @@ function loop(){
   if(dying===0&&!showoff&&introT===0){
     lim.legL.rotation.x=air?.5:Math.sin(cyc)*.9; lim.legR.rotation.x=air?-.5:-Math.sin(cyc)*.9;
     lim.armL.rotation.x=air?-2.5:-Math.sin(cyc)*.9; lim.armR.rotation.x=air?-2.5:Math.sin(cyc)*.9;
-    if(!alive)dog.position.set(0,Math.abs(Math.sin(cyc*1.3))*.1,3.6); else dog.position.y=Math.abs(Math.sin(cyc*1.3))*.12;
+    if(!alive)dog.position.set(0,Math.abs(Math.sin(cyc*1.3))*.1,3.6); else dog.position.y=Math.abs(Math.sin(cyc*1.3))*.12+dogY;
     if(alive){const sg=Math.sign(Math.sin(cyc)); if(sg!==stepS&&!air&&duckT===0){stepS=sg; if(floorY>0)sfx.stepTop(); else sfx.step();}}
     jaw*=.86;
   }
   if(dying===0&&!showoff&&introT===0||showoff||dyk>=62)dl.forEach((q,i)=>q.rotation.x=Math.sin(cyc*1.3+(i%2?Math.PI:0))*(showoff||dying>0?.35:.9));
+  if(alive&&flyT>0){const bl=flyType==='balloon';
+    lim.legL.rotation.x=(bl?.25:.1)+Math.sin(t*5)*.15; lim.legR.rotation.x=-(bl?.1:.1)-Math.sin(t*5)*.15;
+    lim.armL.rotation.x=bl?-1.2+Math.sin(t*6)*.5:-3.1; lim.armR.rotation.x=bl?-2.9:-3.1;
+    const f=.35+Math.sin(t*14)*.55; wingL.rotation.z=-f; wingR.rotation.z=f; flames.forEach((q,i)=>q.scale.set(1,.7+Math.random()*.6,1));}
+  if(alive)player.rotation.x+=(((flyT>0&&flyType!=='balloon')?-.7:0)-player.rotation.x)*.15;
+  if(alive&&dogY>.25){dl[0].rotation.x=dl[1].rotation.x=1.2; dl[2].rotation.x=dl[3].rotation.x=-1.2;}
+  if(capeG.visible)capeS.forEach((q,i)=>q.rotation.x=-.12+Math.sin(t*14-i*1.1)*(.12+i*.07));
   jawG.rotation.x=-jaw;
   drops.forEach(d=>{if(!d.m.visible)return; d.vy-=.006; d.m.position.x+=d.vx; d.m.position.y+=d.vy; d.m.position.z+=d.vz;
     if(d.m.position.y<.06){d.m.position.y=.06;d.vx=d.vy=d.vz=0;}});
@@ -944,6 +1059,21 @@ def db_put(acc):
     _top_remote.clear()
 
 
+def db_bump_score(key, sc):
+    """Chỉ tăng điểm: DB tự so sánh (score < điểm mới) nên không bao giờ ghi thấp hơn, kể cả khi 2 thiết bị gửi cùng lúc."""
+    sc = int(sc)
+    if _sb():
+        _rest("PATCH", {"key": "eq." + key, "score": "lt." + str(sc)}, {"score": sc}, "return=minimal")
+    else:
+        with _flock:
+            d = _f_load()
+            a = d.get(key)
+            if a and sc > int(a.get("score") or 0):
+                a["score"] = sc
+                _f_save(d)
+    _top_remote.clear()
+
+
 def db_del(key):
     if _sb():
         _rest("DELETE", {"key": "eq." + key})
@@ -955,30 +1085,26 @@ def db_del(key):
     _top_remote.clear()
 
 
-def db_reset_scores():
-    if _sb():
-        _rest("PATCH", {"score": "gte.0"}, {"score": 0}, "return=minimal")
-    else:
-        with _flock:
-            d = _f_load()
-            for a in d.values():
-                a["score"] = 0
-            _f_save(d)
-    _top_remote.clear()
+@st.cache_resource
+def _last_board():
+    return {"rows": []}
 
 
 def db_list():
-    """Tất cả người chơi (kể cả điểm 0), xếp theo điểm giảm dần."""
+    """Tất cả người chơi (kể cả điểm 0), xếp theo điểm giảm dần.
+    Nếu DB lỗi tạm thời thì giữ nguyên bảng lần trước thay vì hiện bảng trống."""
     try:
-        sb = _sb()
-        if sb:
-            return _top_remote(*sb)
-        rows = [{"name": a["name"], "score": int(a.get("score", 0)), "avatar": a.get("avatar", "e:🙂")}
-                for a in _f_load().values()]
-        rows.sort(key=lambda r: (-r["score"], r["name"].casefold()))
-        return rows[:BOARD_LIMIT]
+        if _sb():
+            rows = list(_top_remote(*_sb()))
+        else:
+            rows = [{"name": a["name"], "score": int(a.get("score", 0)), "avatar": a.get("avatar", "e:🙂")}
+                    for a in _f_load().values()]
+            rows.sort(key=lambda r: (-r["score"], r["name"].casefold()))
+            rows = rows[:BOARD_LIMIT]
+        _last_board()["rows"] = rows
+        return rows
     except Exception:
-        return []
+        return _last_board()["rows"]
 
 
 # ---------- bảo mật ----------
@@ -1110,9 +1236,8 @@ def dev_action(res):
                 ss["dev_msg"] = f"Đã đặt {acc['name']} = {sc}"
             else:
                 ss["dev_msg"] = "Tài khoản không tồn tại hoặc điểm không hợp lệ."
-        elif act == "dev_clear":
-            db_reset_scores()
-            ss["dev_msg"] = "Đã reset điểm của tất cả tài khoản."
+        else:
+            ss["dev_msg"] = "Hành động không được hỗ trợ."
     except Exception:
         ss["dev_msg"] = "Lỗi kết nối cơ sở dữ liệu."
 
@@ -1190,8 +1315,7 @@ def handle_action(res):
                 except Exception:
                     return
                 if sc > int(acc.get("score") or 0):
-                    acc["score"] = sc
-                    db_put(acc)
+                    db_bump_score(acc["key"], sc)
             elif act == "avatar":
                 av = str(res.get("avatar") or "")
                 if not valid_avatar(av):
@@ -1267,7 +1391,7 @@ if tok:
 
 result = game(board=db_list(), user=user, emojis=EMOJIS, msg=ss.get("msg"), token=tok,
               token_id=ss.get("tok_id", 0), dev=bool(ss.get("dev_ok")), dev_msg=ss.get("dev_msg", ""),
-              key="game", default=None)
+              storage=("supabase" if _sb() else "file"), key="game", default=None)
 
 if isinstance(result, dict) and result.get("sid") and result["sid"] != ss.get("last_sid"):
     ss["last_sid"] = result["sid"]
