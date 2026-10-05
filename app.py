@@ -76,7 +76,6 @@ GAME_HTML = r"""
     <div id="vMain"><h1>CHỌC CHÓ</h1><div id="sub">Chọc chó xong thì... chạy đi! 🐕💨</div><div id="res"></div><div id="best"></div>
       <button class="btn g" id="go">▶ Chơi</button>
       <button class="btn" id="bg">Hướng dẫn</button>
-      <button class="btn" id="dv">Dev</button>
       <button class="btn" id="mn">Về menu</button></div>
     <div id="vGuide" style="display:none"><h1>Hướng dẫn</h1><div id="guide">
       ← → : đổi làn<br>↑ / Space : nhảy<br>↓ / S : cúi, trượt<br>
@@ -84,11 +83,6 @@ GAME_HTML = r"""
       Nhặt bóng bay, cánh hoặc jetpack: bay lên trời, không sợ vật cản dưới đất. Trên trời có chim, diều, máy bay: ↑ ↓ đổi độ cao, ← → đổi làn để né, đụng là thua. Gần hết giờ bay có tiếng bíp, hạ cánh được bất tử vài giây. Chó mặc áo choàng Superman cũng bay đuổi theo!<br>
       <span style="color:#b71c1c">Đụng 1 lần là chó cắn!</span></div>
       <button class="btn" id="bk1">◀ Quay lại</button></div>
-    <div id="vDevLogin" style="display:none"><h1>Dev</h1><input class="inp" id="dpw" type="password" placeholder="Mật khẩu dev"><div class="dmsg" id="dmsg1"></div>
-      <button class="btn g" id="dlogin">Vào</button><button class="btn" id="bk3">◀ Quay lại</button></div>
-    <div id="vDev" style="display:none"><h1>Dev</h1>
-      <div class="dsec">Cheat</div><div id="dcheat"></div>
-      <button class="btn" id="dout">Đăng xuất dev</button><button class="btn" id="bk4">◀ Quay lại</button></div>
   </div></div>
   <div id="pad"><button id="bl">◀</button><button id="bj">▲</button><button id="bd">▼</button><button id="brt">▶</button></div>
 </div>
@@ -97,33 +91,16 @@ GAME_HTML = r"""
 const $=id=>document.getElementById(id);
 let best=0, overMode=false, curView='vMain', cheated=false, DEV=false;
 try{best=Math.floor(+localStorage.getItem('choc_best')||0)}catch(e){}
-const DEV_PW='mk123';                       // mật khẩu mục Dev (đổi ở đây)
 const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function view(v){curView=v; $('card').classList.toggle('wide',v==='vDev'); ['vMain','vGuide','vDevLogin','vDev'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
+function view(v){curView=v; ['vMain','vGuide'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
 $('mn').onclick=()=>{reset(); alive=false; overMode=false; showoff=false; dying=0; $('res').textContent=''; $('go').textContent='▶ Chơi'; view('vMain'); startIntro(true);};
 function send(type,data){try{window.parent.postMessage(Object.assign({isStreamlitMessage:true,type:type},data||{}),'*');}catch(e){}}
 function setHeight(h){send('streamlit:setFrameHeight',{height:h});}
 send('streamlit:componentReady',{apiVersion:1});
 function hudName(){$('n').textContent=cheated?'[DEV] ':'';}
 $('best').textContent=best?'Điểm cao: '+best:'';
-/* ---- DEV: cheat ---- */
 const CH={fly:false,god:false,mult:1,slow:false,start:0};
 const cheatsOn=()=>CH.fly||CH.god||CH.mult>1||CH.slow||CH.start>0;
-function renderDev(){
-  const c=$('dcheat'); c.textContent='';
-  const mkb=(label,fn)=>{const b=document.createElement('button'); b.className='btn sm'; b.textContent=label; b.onclick=()=>{fn();renderDev();}; c.appendChild(b);};
-  mkb('Bay: '+(CH.fly?'BẬT':'TẮT'),()=>{CH.fly=!CH.fly;});
-  mkb('Bất tử: '+(CH.god?'BẬT':'TẮT'),()=>{CH.god=!CH.god;});
-  mkb('Điểm x'+CH.mult,()=>{CH.mult=CH.mult===1?2:CH.mult===2?5:CH.mult===5?10:1;});
-  mkb('Chạy chậm: '+(CH.slow?'BẬT':'TẮT'),()=>{CH.slow=!CH.slow;});
-  mkb('Điểm khởi đầu: '+CH.start,()=>{CH.start=CH.start===0?1000:CH.start===1000?5000:CH.start===5000?20000:0;});
-  mkb('PAY TO WIN (bật tất cả)',()=>{const on=!(CH.fly&&CH.god&&CH.mult>=5&&CH.slow); CH.fly=CH.god=CH.slow=on; CH.mult=on?5:1;});
-}
-$('dv').onclick=()=>{if(DEV){renderDev();view('vDev');}else{$('dpw').value='';$('dmsg1').textContent='';view('vDevLogin');$('dpw').focus();}};
-$('dlogin').onclick=()=>{if($('dpw').value===DEV_PW){DEV=true; $('dpw').value=''; renderDev(); view('vDev');} else {$('dmsg1').textContent='Sai mật khẩu.';}};
-$('dpw').addEventListener('keydown',e=>{e.stopPropagation(); if(e.key==='Enter')$('dlogin').onclick();});
-$('bk3').onclick=()=>view('vMain'); $('bk4').onclick=()=>view('vMain');
-$('dout').onclick=()=>{DEV=false; Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0}); view('vMain');};
 $('bg').onclick=()=>view('vGuide'); $('bk1').onclick=()=>view('vMain');
 const wrap=$('wrap'), W=()=>wrap.clientWidth, H=()=>wrap.clientHeight;
 
