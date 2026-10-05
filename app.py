@@ -1,20 +1,10 @@
-import base64
-import hashlib
-import hmac
-import json
-import os
-import re
-import secrets
-import threading
-import time
 from pathlib import Path
 
-import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Chọc chó", page_icon="🐕", layout="wide")
-st.markdown("<h3 style='text-align:center'>TOP1 ĐÉO CÓ GÌ ĐÂU GIẢI GIẢi CC</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align:center'>🐕 CHỌC CHÓ 🐕</h3>", unsafe_allow_html=True)
 
 GAME_HTML = r"""
 <style>
@@ -78,16 +68,14 @@ GAME_HTML = r"""
   #vDev{touch-action:pan-y}
 </style>
 <div id="wrap">
-  <div id="hud"><span id="n">?</span> &nbsp;|&nbsp; <span id="s">0</span></div>
+  <div id="hud"><span id="n"></span><span id="s">0</span></div>
   <div id="blood"></div>
   <div id="cap"></div><div id="skip">Space / chạm: bỏ qua</div>
   <button id="mute">🔊</button>
   <div id="msg"><div id="card">
-    <div id="vMain"><h1>CHỌC CHÓ</h1><div id="sub">Chọc chó xong thì... chạy đi! 🐕💨</div><div id="ubar"></div><div id="res"></div><div id="best"></div>
+    <div id="vMain"><h1>CHỌC CHÓ</h1><div id="sub">Chọc chó xong thì... chạy đi! 🐕💨</div><div id="res"></div><div id="best"></div>
       <button class="btn g" id="go">▶ Chơi</button>
       <button class="btn" id="bg">Hướng dẫn</button>
-      <button class="btn" id="br2">Tài khoản</button>
-      <button class="btn" id="rk">Xếp hạng</button>
       <button class="btn" id="dv">Dev</button>
       <button class="btn" id="mn">Về menu</button></div>
     <div id="vGuide" style="display:none"><h1>Hướng dẫn</h1><div id="guide">
@@ -96,150 +84,31 @@ GAME_HTML = r"""
       Nhặt bóng bay, cánh hoặc jetpack: bay lên trời, không sợ vật cản dưới đất. Trên trời có chim, diều, máy bay: ↑ ↓ đổi độ cao, ← → đổi làn để né, đụng là thua. Gần hết giờ bay có tiếng bíp, hạ cánh được bất tử vài giây. Chó mặc áo choàng Superman cũng bay đuổi theo!<br>
       <span style="color:#b71c1c">Đụng 1 lần là chó cắn!</span></div>
       <button class="btn" id="bk1">◀ Quay lại</button></div>
-    <div id="vRank" style="display:none"><h1>Xếp hạng</h1><div id="rankMe"></div><div id="rank"></div><button class="btn" id="bk2">◀ Quay lại</button></div>
-    <div id="vDevLogin" style="display:none"><h1>Dev</h1><input class="inp" id="dpw" type="password" placeholder="Mật khẩu dev" data-enter="dlogin"><div class="dmsg" id="dmsg1"></div>
+    <div id="vDevLogin" style="display:none"><h1>Dev</h1><input class="inp" id="dpw" type="password" placeholder="Mật khẩu dev"><div class="dmsg" id="dmsg1"></div>
       <button class="btn g" id="dlogin">Vào</button><button class="btn" id="bk3">◀ Quay lại</button></div>
-    <div id="vDev" style="display:none"><h1>Dev</h1><div class="dmsg" id="dstore"></div><div class="dmsg" id="dmsg2"></div>
-      <div class="dsec">Cheat (khi dùng cheat, điểm không lên bảng)</div><div id="dcheat"></div>
-      <div class="dsec">Quản lý bảng xếp hạng</div><div id="dboard"></div>
-      <input class="inp" id="dname" placeholder="Tên tài khoản"><input class="inp" id="dscore" type="number" placeholder="Điểm">
-      <button class="btn sm" id="dset">Đặt điểm (boost)</button><button class="btn sm" id="ddel">Xóa tài khoản</button>
+    <div id="vDev" style="display:none"><h1>Dev</h1>
+      <div class="dsec">Cheat</div><div id="dcheat"></div>
       <button class="btn" id="dout">Đăng xuất dev</button><button class="btn" id="bk4">◀ Quay lại</button></div>
-    <div id="vAuth" style="display:none"><h1 id="atitle">Đăng nhập</h1>
-      <input class="inp" id="au" maxlength="16" placeholder="Tên đăng nhập (3-16 ký tự)" autocomplete="username" data-enter="asub">
-      <input class="inp" id="ap" type="password" maxlength="64" placeholder="Mật khẩu" autocomplete="current-password" data-enter="asub">
-      <input class="inp" id="ap2" type="password" maxlength="64" placeholder="Nhập lại mật khẩu" autocomplete="new-password" data-enter="asub" style="display:none">
-      <div class="amsg" id="amsg1"></div>
-      <button class="btn g" id="asub">Đăng nhập</button>
-      <button class="btn" id="aswap">Chưa có tài khoản? Đăng ký</button>
-      <button class="btn" id="bk5">◀ Quay lại</button></div>
-    <div id="vAcc" style="display:none"><h1>Tài khoản</h1>
-      <div id="accTop"></div><div class="amsg" id="amsg2"></div>
-      <div class="dsec">Ảnh đại diện</div><div id="emoGrid"></div>
-      <button class="btn sm" id="upBtn">Tải ảnh lên</button><input type="file" id="upFile" accept="image/*" style="display:none">
-      <div class="dsec">Đổi tên</div>
-      <input class="inp" id="rn" maxlength="16" placeholder="Tên mới" data-enter="rnBtn"><button class="btn sm" id="rnBtn">Đổi tên</button>
-      <div class="dsec">Đổi mật khẩu</div>
-      <input class="inp" id="cp0" type="password" maxlength="64" placeholder="Mật khẩu hiện tại" autocomplete="current-password">
-      <input class="inp" id="cp1" type="password" maxlength="64" placeholder="Mật khẩu mới" autocomplete="new-password" data-enter="cpBtn"><button class="btn sm" id="cpBtn">Đổi mật khẩu</button>
-      <div class="dsec">Đăng xuất / Xóa tài khoản</div>
-      <button class="btn sm" id="loBtn">Đăng xuất</button>
-      <input class="inp" id="dl0" type="password" maxlength="64" placeholder="Nhập mật khẩu để xóa tài khoản" autocomplete="current-password" data-enter="dlBtn">
-      <button class="btn sm" id="dlBtn" style="background:#8e1b1b">Xóa tài khoản</button>
-      <button class="btn" id="bk6">◀ Quay lại</button></div>
   </div></div>
   <div id="pad"><button id="bl">◀</button><button id="bj">▲</button><button id="bd">▼</button><button id="brt">▶</button></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 const $=id=>document.getElementById(id);
-let NAME='', best=0, USER=null, EMOJIS=[], lastMsg=0, lastTok=0, resumeSent=false;
+let best=0, overMode=false, curView='vMain', cheated=false, DEV=false;
+try{best=Math.floor(+localStorage.getItem('choc_best')||0)}catch(e){}
+const DEV_PW='mk123';                       // mật khẩu mục Dev (đổi ở đây)
 const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let overMode=false;
-let curView='vMain';
-function view(v){curView=v; $('card').classList.toggle('wide',v==='vDev'||v==='vAcc'); ['vMain','vGuide','vAuth','vAcc','vRank','vDevLogin','vDev'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
-$('mn').onclick=()=>{reset(); alive=false; overMode=false; showoff=false; dying=0; $('res').textContent=NAME?'Chào '+NAME+'!':''; $('go').textContent='▶ Chơi'; view('vMain'); startIntro(true);};
-/* ---- cầu nối Streamlit + bảng xếp hạng ---- */
+function view(v){curView=v; $('card').classList.toggle('wide',v==='vDev'); ['vMain','vGuide','vDevLogin','vDev'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
+$('mn').onclick=()=>{reset(); alive=false; overMode=false; showoff=false; dying=0; $('res').textContent=''; $('go').textContent='▶ Chơi'; view('vMain'); startIntro(true);};
 function send(type,data){try{window.parent.postMessage(Object.assign({isStreamlitMessage:true,type:type},data||{}),'*');}catch(e){}}
 function setHeight(h){send('streamlit:setFrameHeight',{height:h});}
-function setValue(v){send('streamlit:setComponentValue',{value:v,dataType:'json'});}
-let BOARD=[];
-const CK='choc_cred';
-function loadCred(){try{const c=JSON.parse(localStorage.getItem(CK)||'null'); return c&&c.name&&c.token?c:null}catch(e){return null}}
-function saveCred(n,t){try{localStorage.setItem(CK,JSON.stringify({name:n,token:t}))}catch(e){}}
-function clearCred(){try{localStorage.removeItem(CK)}catch(e){}}
-function act(action,extra){setValue(Object.assign({action:action,sid:'a-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)},extra||{}));}
-function showMsg(t,ok){['amsg1','amsg2'].forEach(i=>{const e=$(i); e.textContent=t||''; e.style.color=ok?'#2e7d32':'#b71c1c';});}
-function avEl(av,px){
-  const sp=document.createElement('span'); sp.className='av'; sp.style.width=sp.style.height=px+'px'; sp.style.fontSize=Math.round(px*.68)+'px';
-  if(typeof av==='string'&&av.indexOf('data:image/jpeg;base64,')===0){const im=document.createElement('img'); im.src=av; sp.appendChild(im);}
-  else sp.textContent=(typeof av==='string'&&av.indexOf('e:')===0)?av.slice(2):'🙂';
-  return sp;
-}
-function hudName(){const e=$('n'); e.textContent=''; if(USER)e.appendChild(avEl(USER.avatar,22)); e.appendChild(document.createTextNode((NAME||'?')+(cheated?' [DEV]':'')));}
-function applyUser(u){
-  USER=u||null; NAME=u?u.name:''; best=u?u.score:0; hudName();
-  const ub=$('ubar'); ub.textContent=''; if(u){ub.appendChild(avEl(u.avatar,28)); ub.appendChild(document.createTextNode(u.name));}
-  $('best').textContent=u?'Điểm cao: '+best:''; if(!overMode)$('res').textContent=u?'Chào '+NAME+'!':'';
-  $('br2').textContent=u?'Tài khoản':'Đăng nhập / Đăng ký';
-  if(curView==='vAcc'){ if(u)renderAcc(); else view('vMain'); }
-}
-window.addEventListener('message',e=>{const d=e.data; if(d&&d.type==='streamlit:render'){const a=d.args||{};
-  if(Array.isArray(a.emojis)&&a.emojis.length&&!EMOJIS.length){EMOJIS=a.emojis; buildEmo();}
-  if(Array.isArray(a.board))BOARD=a.board;
-  applyUser(a.user); STORAGE=a.storage||'';
-  if(a.token&&a.token_id!==lastTok){lastTok=a.token_id; saveCred(a.user?a.user.name:'',a.token);}
-  else if(a.user){const c=loadCred(); if(c&&c.name!==a.user.name)saveCred(a.user.name,c.token);}
-  if(a.msg&&a.msg.id!==lastMsg){lastMsg=a.msg.id; showMsg(a.msg.t,a.msg.ok); if(a.msg.clear)clearCred(); if(a.msg.go)view(a.msg.go);}
-  if(a.user&&curView==='vAuth')view('vMain');
-  if(!a.user&&!resumeSent){resumeSent=true; const c=loadCred(); if(c)act('resume',{name:c.name,token:c.token});}
-  if('dev' in a){DEV=!!a.dev; DEVMSG=a.dev_msg||'';
-    if(!DEV)Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0});
-    $('dmsg1').textContent=DEVMSG;
-    if(DEV&&curView==='vDevLogin'){renderDev();view('vDev');} else if(!DEV&&curView==='vDev')view('vMain'); else if(DEV&&curView==='vDev')renderDev();}
-  renderRank();
-}});
 send('streamlit:componentReady',{apiVersion:1});
-function renderRank(){
-  const el=$('rank'), me=$('rankMe'); el.textContent=''; me.textContent='';
-  if(!BOARD.length){el.textContent='Chưa có ai. Hãy là người đầu tiên!'; return;}
-  const idx=USER?BOARD.findIndex(r=>r.name===USER.name):-1;
-  me.textContent=(idx>=0?'Hạng của bạn: #'+(idx+1)+'  ·  ':'')+BOARD.length+' người chơi  ·  vuốt lên/xuống để xem';
-  const tb=document.createElement('table'), med=['🥇','🥈','🥉'];
-  BOARD.forEach((r,i)=>{const tr=document.createElement('tr'); if(USER&&r.name===USER.name)tr.className='me';
-    const c1=document.createElement('td'); c1.textContent=med[i]||String(i+1);
-    const c2=document.createElement('td'); c2.appendChild(avEl(r.avatar,24));
-    const c3=document.createElement('td'); c3.textContent=String(r.name);
-    const c4=document.createElement('td'); c4.textContent=String(r.score);
-    [c1,c2,c3,c4].forEach(c=>tr.appendChild(c)); tb.appendChild(tr);});
-  el.appendChild(tb);
-}
-function submitScore(){
-  const sc=Math.floor(score); if(sc<=0||!USER||cheated)return;
-  act('score',{score:sc});
-}
-/* ---- giao diện tài khoản ---- */
-let authMode='login';
-function setAuthMode(m){authMode=m; const r=m==='register';
-  $('atitle').textContent=r?'Đăng ký':'Đăng nhập'; $('ap2').style.display=r?'block':'none'; $('asub').textContent=r?'Đăng ký':'Đăng nhập';
-  $('aswap').textContent=r?'Đã có tài khoản? Đăng nhập':'Chưa có tài khoản? Đăng ký'; showMsg('',true);}
-$('aswap').onclick=()=>setAuthMode(authMode==='login'?'register':'login');
-$('asub').onclick=()=>{const n=$('au').value.trim(), p=$('ap').value;
-  if(!n||!p){showMsg('Nhập đủ tên và mật khẩu.',false);return;}
-  if(authMode==='register'){
-    if(p.length<4){showMsg('Mật khẩu tối thiểu 4 ký tự.',false);return;}
-    if(p!==$('ap2').value){showMsg('Mật khẩu nhập lại không khớp.',false);return;}}
-  showMsg('Đang xử lý...',true); act(authMode,{name:n,password:p}); $('ap').value=''; $('ap2').value='';};
-$('bk5').onclick=()=>view('vMain'); $('bk6').onclick=()=>view('vMain');
-$('br2').onclick=()=>{ if(USER){renderAcc();showMsg('',true);view('vAcc');} else {setAuthMode('login');view('vAuth');$('au').focus();} };
-function renderAcc(){
-  const t=$('accTop'); t.textContent=''; if(!USER)return;
-  t.appendChild(avEl(USER.avatar,56));
-  const b=document.createElement('div'), n=document.createElement('div'), sc=document.createElement('div');
-  n.className='accn'; n.textContent=USER.name; sc.textContent='Điểm cao: '+USER.score; b.appendChild(n); b.appendChild(sc); t.appendChild(b);
-}
-function buildEmo(){const g=$('emoGrid'); g.textContent='';
-  EMOJIS.forEach(em=>{const b=document.createElement('button'); b.className='emo'; b.textContent=em; b.onclick=()=>act('avatar',{avatar:'e:'+em}); g.appendChild(b);});}
-$('upBtn').onclick=()=>$('upFile').click();
-$('upFile').onchange=e=>{const f=e.target.files&&e.target.files[0]; e.target.value=''; if(!f)return;
-  if(!/^image\//.test(f.type)){showMsg('Hãy chọn file ảnh.',false);return;}
-  const img=new Image(), url=URL.createObjectURL(f);
-  img.onload=()=>{const c=document.createElement('canvas'); c.width=c.height=48; const x=c.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,48,48);
-    const m=Math.min(img.width,img.height); x.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,48,48); URL.revokeObjectURL(url);
-    showMsg('Đang tải ảnh...',true); act('avatar',{avatar:c.toDataURL('image/jpeg',.7)});};
-  img.onerror=()=>showMsg('Không đọc được ảnh này.',false); img.src=url;};
-$('rnBtn').onclick=()=>{const n=$('rn').value.trim(); if(!n){showMsg('Nhập tên mới.',false);return;} showMsg('Đang xử lý...',true); act('rename',{name:n}); $('rn').value='';};
-$('cpBtn').onclick=()=>{const o=$('cp0').value, n=$('cp1').value; if(!o||!n){showMsg('Nhập mật khẩu cũ và mới.',false);return;}
-  if(n.length<4){showMsg('Mật khẩu mới tối thiểu 4 ký tự.',false);return;} showMsg('Đang xử lý...',true); act('chpw',{old:o,new:n}); $('cp0').value=''; $('cp1').value='';};
-$('loBtn').onclick=()=>{const c=loadCred(); act('logout',{token:c?c.token:''}); clearCred();};
-let delArm=0; $('dlBtn').onclick=()=>{const p=$('dl0').value; if(!p){showMsg('Nhập mật khẩu để xóa tài khoản.',false);return;}
-  if(Date.now()-delArm<5000){act('delete',{password:p}); delArm=0; $('dlBtn').textContent='Xóa tài khoản'; $('dl0').value='';}
-  else{delArm=Date.now(); $('dlBtn').textContent='Bấm lần nữa để XÓA VĨNH VIỄN'; setTimeout(()=>{if(Date.now()-delArm>=4900)$('dlBtn').textContent='Xóa tài khoản';},5000);}};
-/* ---- DEV: mật khẩu kiểm tra ở server (st.secrets), cheat chỉ bật khi server xác nhận ---- */
-let DEV=false, DEVMSG='', cheated=false, STORAGE='';
+function hudName(){$('n').textContent=cheated?'[DEV] ':'';}
+$('best').textContent=best?'Điểm cao: '+best:'';
+/* ---- DEV: cheat ---- */
 const CH={fly:false,god:false,mult:1,slow:false,start:0};
 const cheatsOn=()=>CH.fly||CH.god||CH.mult>1||CH.slow||CH.start>0;
-function devAct(action,extra){setValue(Object.assign({action:action,sid:'d-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)},extra||{}));}
 function renderDev(){
   const c=$('dcheat'); c.textContent='';
   const mkb=(label,fn)=>{const b=document.createElement('button'); b.className='btn sm'; b.textContent=label; b.onclick=()=>{fn();renderDev();}; c.appendChild(b);};
@@ -249,25 +118,13 @@ function renderDev(){
   mkb('Chạy chậm: '+(CH.slow?'BẬT':'TẮT'),()=>{CH.slow=!CH.slow;});
   mkb('Điểm khởi đầu: '+CH.start,()=>{CH.start=CH.start===0?1000:CH.start===1000?5000:CH.start===5000?20000:0;});
   mkb('PAY TO WIN (bật tất cả)',()=>{const on=!(CH.fly&&CH.god&&CH.mult>=5&&CH.slow); CH.fly=CH.god=CH.slow=on; CH.mult=on?5:1;});
-  const b=$('dboard'); b.textContent='';
-  BOARD.forEach(r=>{const row=document.createElement('div'); row.className='drow'; const t=document.createElement('span'); t.textContent=r.name+' — '+r.score;
-    const x=document.createElement('button'); x.textContent='✕'; x.onclick=()=>devAct('dev_delete',{name:r.name}); row.appendChild(t); row.appendChild(x); b.appendChild(row);});
-  $('dmsg2').textContent=DEVMSG;
-  const ds=$('dstore'), ok=STORAGE==='supabase';
-  ds.textContent=ok?'Lưu trữ: Supabase. Điểm giữ vĩnh viễn, không bao giờ reset.':'Lưu trữ: file tạm. Sẽ MẤT khi app khởi động lại, hãy cấu hình Supabase!';
-  ds.style.color=ok?'#2e7d32':'#b71c1c';
 }
 $('dv').onclick=()=>{if(DEV){renderDev();view('vDev');}else{$('dpw').value='';$('dmsg1').textContent='';view('vDevLogin');$('dpw').focus();}};
-$('dlogin').onclick=()=>{devAct('dev_login',{password:$('dpw').value}); $('dpw').value=''; $('dmsg1').textContent='Đang kiểm tra...';};
+$('dlogin').onclick=()=>{if($('dpw').value===DEV_PW){DEV=true; $('dpw').value=''; renderDev(); view('vDev');} else {$('dmsg1').textContent='Sai mật khẩu.';}};
+$('dpw').addEventListener('keydown',e=>{e.stopPropagation(); if(e.key==='Enter')$('dlogin').onclick();});
 $('bk3').onclick=()=>view('vMain'); $('bk4').onclick=()=>view('vMain');
-$('dout').onclick=()=>{devAct('dev_logout'); Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0}); view('vMain');};
-$('dset').onclick=()=>{const n=$('dname').value.trim(), v=parseInt($('dscore').value,10); if(n&&v>0)devAct('dev_set',{name:n,score:v});};
-$('ddel').onclick=()=>{const n=$('dname').value.trim(); if(n)devAct('dev_delete',{name:n});};
-let lastRef=0;
-function refreshBoard(){const n=Date.now(); if(n-lastRef<5000)return; lastRef=n; setValue({action:'refresh',sid:'r-'+n});}
-$('rk').onclick=()=>{renderRank();view('vRank');refreshBoard();}; $('bk2').onclick=()=>view('vMain');
+$('dout').onclick=()=>{DEV=false; Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0}); view('vMain');};
 $('bg').onclick=()=>view('vGuide'); $('bk1').onclick=()=>view('vMain');
-applyUser(null);
 const wrap=$('wrap'), W=()=>wrap.clientWidth, H=()=>wrap.clientHeight;
 
 /* ================= ÂM THANH ================= */
@@ -742,9 +599,9 @@ function bloodBurst(){
   pool.position.set(player.position.x,.05,.2); pool.visible=true; poolS=0; $('blood').style.opacity=.6;
 }
 function showOver(){
-  if(!cheated&&score>best){best=Math.floor(score); if(USER)USER.score=best;}
-  $('res').innerHTML='Chó cắn rồi! <b style="color:#b71c1c">'+esc(NAME)+' gà quá!</b> &nbsp;Điểm: '+Math.floor(score);
-  $('best').textContent='Điểm cao: '+best; $('go').textContent='↻ Chơi lại'; overMode=true; view('vMain'); $('msg').style.display='flex'; sfx.over(); submitScore();
+  if(!cheated&&score>best){best=Math.floor(score); try{localStorage.setItem('choc_best',String(best))}catch(e){}}
+  $('res').innerHTML='Chó cắn rồi! <b style="color:#b71c1c">Gà quá!</b> &nbsp;Điểm: '+Math.floor(score);
+  $('best').textContent='Điểm cao: '+best; $('go').textContent='↻ Chơi lại'; overMode=true; view('vMain'); $('msg').style.display='flex'; sfx.over();
 }
 const left=()=>{if(alive&&lane>0)lane--}, right=()=>{if(alive&&lane<2)lane++};
 const jump=()=>{if(alive&&flyT>0){if(flyLv<1){flyLv++;sfx.swoosh();}return;} if(alive&&y<=floorY+.01){vy=.34;sfx.jump();}};
@@ -777,7 +634,7 @@ function goFull(){                                   // điện thoại: toàn m
     if(f&&!document.fullscreenElement){const pr=f.call(wrap); if(pr&&pr.then)pr.then(()=>{try{screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}).catch(()=>{});}
   }catch(e){}
 }
-$('go').onclick=e=>{if(e)e.stopPropagation(); if(!NAME){setAuthMode('login');view('vAuth');return;} goFull(); ac(); if(AC.state==='suspended')AC.resume(); ambWanted=true; ambience(true);
+$('go').onclick=e=>{if(e)e.stopPropagation(); goFull(); ac(); if(AC.state==='suspended')AC.resume(); ambWanted=true; ambience(true);
   $('msg').style.display='none'; startIntro(false);};
 
 /* ---------- ANIMATION MỞ ĐẦU: chọc chó -> chó dậy -> bị đuổi ---------- */
@@ -841,8 +698,10 @@ function introStep(){
 }
 wrap.addEventListener('click',()=>{if(introT>25&&!introLoop)endIntro();});          // bỏ qua hoạt cảnh (không tính cú click vừa bấm Chơi)
 
+let lastNow=performance.now(); const SCORE_PS=10;      // điểm tăng đều theo giây: 10 điểm/giây
 function loop(){
   requestAnimationFrame(loop); t+=.016;
+  const nowT=performance.now(), dts=Math.min(.1,(nowT-lastNow)/1000); lastNow=nowT;
   const mv=introT>0?introMv:(alive?speed*boostK:((dying>0||showoff)?0:.09));
   if(introT>0){introStep();}
   else if(dying>0){
@@ -864,7 +723,7 @@ function loop(){
     dog.rotation.y=Math.PI+Math.sin(t*1.6)*.5; dhead.rotation.x=.45+Math.sin(t*5)*.08; jaw=.12+Math.abs(Math.sin(t*9))*.1;
     tail.rotation.z=Math.sin(t*22)*.6; if(++chewT%26===0)sfx.chomp();
   } else if(alive){
-    speed=Math.min(CH.slow?SPD0:SPDMAX,speed+.00004); score+=speed*.25*CH.mult*(flyT>0?(flyType==='jet'?3:2):1); timer++;
+    speed=Math.min(CH.slow?SPD0:SPDMAX,speed+.00004); score+=dts*SCORE_PS*CH.mult*(flyT>0?(flyType==='jet'?3:2):1); timer++;
     boostK+=(((flyT>0&&flyType==='jet')?1.45:1)-boostK)*.05;
     if(flyT>150&&!CH.fly&&--skyT<=0){skyT=55+Math.floor(Math.random()*30);spawnSky(55);}
     if(timer%Math.max(17,Math.floor(42-(speed-SPD0)*130))===0)spawn();
@@ -970,399 +829,8 @@ fit(); addEventListener('resize',fit);
 </script>
 """
 
-# ==================== TÀI KHOẢN + BẢNG XẾP HẠNG DÙNG CHUNG ====================
-BASE = Path(__file__).parent
-ACCOUNTS = BASE / "accounts.json"          # dùng khi chưa cấu hình Supabase
-FRONT = BASE / "game_frontend"
-NAME_RE = re.compile(r"^[\w ]{3,16}$")      # chữ, số, _ và dấu cách
-EMOJIS = ["🙂", "😎", "🤠", "😈", "👻", "🤖", "👽", "💀", "🎃", "🐶", "🐱", "🐯", "🦊", "🐵", "🐸", "🐼",
-          "🐧", "🐔", "🦁", "🐷", "🐮", "🦄", "🐲", "🔥", "⭐", "⚡", "🍀", "🏆"]
-BOARD_LIMIT = 500
-_flock = threading.Lock()
-
-
-def _sb():
-    """(url, key) nếu đã cấu hình Supabase trong st.secrets, ngược lại None."""
-    try:
-        return st.secrets["SUPABASE_URL"].rstrip("/"), st.secrets["SUPABASE_KEY"]
-    except Exception:
-        return None
-
-
-def _hdr(key):
-    return {"apikey": key, "Authorization": "Bearer " + key, "Content-Type": "application/json"}
-
-
-def _rest(method, params=None, body=None, prefer=None):
-    url, key = _sb()
-    h = _hdr(key)
-    if prefer:
-        h["Prefer"] = prefer
-    r = requests.request(method, f"{url}/rest/v1/accounts", headers=h, params=params, timeout=8,
-                         data=json.dumps(body) if body is not None else None)
-    r.raise_for_status()
-    return r.json() if r.content else None
-
-
-def _f_load():
-    try:
-        d = json.loads(ACCOUNTS.read_text(encoding="utf-8"))
-        return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
-
-
-def _f_save(d):
-    tmp = ACCOUNTS.with_suffix(".tmp")
-    tmp.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, ACCOUNTS)
-
-
-@st.cache_data(ttl=5, show_spinner=False)
-def _top_remote(url, key):
-    r = requests.get(f"{url}/rest/v1/accounts", headers=_hdr(key), timeout=8,
-                     params={"select": "name,score,avatar", "order": "score.desc,name.asc", "limit": str(BOARD_LIMIT)})
-    r.raise_for_status()
-    return r.json()
-
-
-def db_get(key):
-    if _sb():
-        rows = _rest("GET", {"select": "*", "key": "eq." + key, "limit": "1"})
-        return rows[0] if rows else None
-    return _f_load().get(key)
-
-
-def db_create(acc):
-    """Tạo mới; lỗi nếu tên đã tồn tại."""
-    if _sb():
-        _rest("POST", None, acc, "return=minimal")
-    else:
-        with _flock:
-            d = _f_load()
-            if acc["key"] in d:
-                raise ValueError("exists")
-            d[acc["key"]] = acc
-            _f_save(d)
-    _top_remote.clear()
-
-
-def db_put(acc):
-    """Ghi đè/cập nhật."""
-    if _sb():
-        _rest("POST", {"on_conflict": "key"}, acc, "resolution=merge-duplicates,return=minimal")
-    else:
-        with _flock:
-            d = _f_load()
-            d[acc["key"]] = acc
-            _f_save(d)
-    _top_remote.clear()
-
-
-def db_bump_score(key, sc):
-    """Chỉ tăng điểm: DB tự so sánh (score < điểm mới) nên không bao giờ ghi thấp hơn, kể cả khi 2 thiết bị gửi cùng lúc."""
-    sc = int(sc)
-    if _sb():
-        _rest("PATCH", {"key": "eq." + key, "score": "lt." + str(sc)}, {"score": sc}, "return=minimal")
-    else:
-        with _flock:
-            d = _f_load()
-            a = d.get(key)
-            if a and sc > int(a.get("score") or 0):
-                a["score"] = sc
-                _f_save(d)
-    _top_remote.clear()
-
-
-def db_del(key):
-    if _sb():
-        _rest("DELETE", {"key": "eq." + key})
-    else:
-        with _flock:
-            d = _f_load()
-            d.pop(key, None)
-            _f_save(d)
-    _top_remote.clear()
-
-
-@st.cache_resource
-def _last_board():
-    return {"rows": []}
-
-
-def db_list():
-    """Tất cả người chơi (kể cả điểm 0), xếp theo điểm giảm dần.
-    Nếu DB lỗi tạm thời thì giữ nguyên bảng lần trước thay vì hiện bảng trống."""
-    try:
-        if _sb():
-            rows = list(_top_remote(*_sb()))
-        else:
-            rows = [{"name": a["name"], "score": int(a.get("score", 0)), "avatar": a.get("avatar", "e:🙂")}
-                    for a in _f_load().values()]
-            rows.sort(key=lambda r: (-r["score"], r["name"].casefold()))
-            rows = rows[:BOARD_LIMIT]
-        _last_board()["rows"] = rows
-        return rows
-    except Exception:
-        return _last_board()["rows"]
-
-
-# ---------- bảo mật ----------
-def _hash(pw, salt):
-    return hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), bytes.fromhex(salt), 150_000).hex()
-
-
-def _tok_hash(t):
-    return hashlib.sha256(t.encode("utf-8")).hexdigest()
-
-
-def _new_token(acc):
-    """Tạo token đăng nhập cho thiết bị; giữ tối đa 5 thiết bị gần nhất."""
-    t = secrets.token_urlsafe(32)
-    hs = [h for h in (acc.get("token_hash") or "").split(",") if h][-4:]
-    hs.append(_tok_hash(t))
-    acc["token_hash"] = ",".join(hs)
-    return t
-
-
-@st.cache_resource
-def _fails():
-    return {}
-
-
-def _locked(key):
-    v = _fails().get(key)
-    return int(v[1] - time.time()) + 1 if v and v[1] > time.time() else 0
-
-
-def _bad(key):
-    v = _fails().setdefault(key, [0, 0])
-    v[0] += 1
-    if v[0] >= 5:
-        v[0], v[1] = 0, time.time() + 60
-
-
-def _pw_ok(acc, pw):
-    """Kiểm tra mật khẩu có giới hạn số lần thử (5 lần sai -> khóa 60s)."""
-    key = acc["key"]
-    wait = _locked(key)
-    if wait:
-        return False, f"Thử sai quá nhiều, đợi {wait}s."
-    if hmac.compare_digest(_hash(pw, acc["salt"]), acc["pw_hash"]):
-        _fails().pop(key, None)
-        return True, ""
-    _bad(key)
-    return False, "Sai mật khẩu."
-
-
-def norm_name(n):
-    return " ".join(str(n or "").split())
-
-
-def valid_avatar(av):
-    if av.startswith("e:"):
-        return av[2:] in EMOJIS
-    pre = "data:image/jpeg;base64,"
-    if av.startswith(pre) and len(av) <= 12000:
-        try:
-            return base64.b64decode(av[len(pre):], validate=True)[:2] == b"\xff\xd8"
-        except Exception:
-            return False
-    return False
-
-
-def public(acc):
-    return {"name": acc["name"], "avatar": acc.get("avatar") or "e:🙂", "score": int(acc.get("score") or 0)}
-
-
-def say(text, ok=False, go=None, clear=False):
-    ss = st.session_state
-    ss["msg_id"] = ss.get("msg_id", 0) + 1
-    ss["msg"] = {"t": text, "ok": ok, "id": ss["msg_id"], "go": go, "clear": clear}
-
-
-# ---------- mật khẩu dev ----------
-DEV_PASSWORD_DEFAULT = "mk123"      # mật khẩu mục Dev (muốn đổi: sửa ở đây, hoặc đặt DEV_PASSWORD trong Secrets để ghi đè)
-
-
-def dev_password():
-    try:
-        return str(st.secrets["DEV_PASSWORD"])
-    except Exception:
-        return os.environ.get("DEV_PASSWORD", DEV_PASSWORD_DEFAULT)
-
-
-def dev_action(res):
-    ss = st.session_state
-    act = res.get("action")
-    if act == "dev_login":
-        pw, now = dev_password(), time.time()
-        if not pw:
-            ss["dev_msg"] = "Server chưa cấu hình DEV_PASSWORD."
-        elif ss.get("dev_lock", 0) > now:
-            ss["dev_msg"] = f"Thử sai quá nhiều, đợi {int(ss['dev_lock'] - now)}s."
-        elif hmac.compare_digest(str(res.get("password", "")).encode(), pw.encode()):
-            ss["dev_ok"], ss["dev_fail"], ss["dev_msg"] = True, 0, "Đã vào chế độ dev."
-        else:
-            ss["dev_fail"] = ss.get("dev_fail", 0) + 1
-            ss["dev_msg"] = "Sai mật khẩu."
-            if ss["dev_fail"] >= 5:
-                ss["dev_lock"], ss["dev_fail"] = now + 60, 0
-        return
-    if act == "dev_logout":
-        ss["dev_ok"], ss["dev_msg"] = False, ""
-        return
-    if not ss.get("dev_ok"):
-        ss["dev_msg"] = "Chưa đăng nhập dev."
-        return
-    name = norm_name(res.get("name"))[:16]
-    key = name.casefold()
-    try:
-        if act == "dev_delete":
-            if name and db_get(key):
-                db_del(key)
-                ss["dev_msg"] = "Đã xóa tài khoản " + name
-            else:
-                ss["dev_msg"] = "Không tìm thấy tài khoản " + name
-        elif act == "dev_set":
-            acc = db_get(key) if name else None
-            try:
-                sc = max(1, min(999999, int(res.get("score"))))
-            except Exception:
-                sc = 0
-            if acc and sc:
-                acc["score"] = sc
-                db_put(acc)
-                ss["dev_msg"] = f"Đã đặt {acc['name']} = {sc}"
-            else:
-                ss["dev_msg"] = "Tài khoản không tồn tại hoặc điểm không hợp lệ."
-        else:
-            ss["dev_msg"] = "Hành động không được hỗ trợ."
-    except Exception:
-        ss["dev_msg"] = "Lỗi kết nối cơ sở dữ liệu."
-
-
-# ---------- xử lý hành động từ game ----------
-def handle_action(res):
-    ss = st.session_state
-    act = res.get("action")
-    if act and act.startswith("dev_"):
-        return dev_action(res)
-    try:
-        if act == "refresh":
-            _top_remote.clear()
-        elif act == "register":
-            name, pw = norm_name(res.get("name")), str(res.get("password") or "")
-            if not NAME_RE.match(name):
-                return say("Tên 3-16 ký tự: chữ, số, dấu cách hoặc _.")
-            if not 4 <= len(pw) <= 64:
-                return say("Mật khẩu 4-64 ký tự.")
-            key = name.casefold()
-            if db_get(key):
-                return say("Tên này đã có người dùng.")
-            salt = secrets.token_hex(16)
-            acc = {"key": key, "name": name, "pw_hash": _hash(pw, salt), "salt": salt,
-                   "avatar": "e:🙂", "score": 0, "token_hash": ""}
-            tok = _new_token(acc)
-            try:
-                db_create(acc)
-            except Exception:
-                return say("Không tạo được tài khoản (tên có thể đã bị lấy).")
-            ss["uk"], ss["new_token"] = key, tok
-            say("Đăng ký thành công!", True, go="vMain")
-        elif act == "login":
-            key = norm_name(res.get("name")).casefold()
-            wait = _locked(key)
-            if wait:
-                return say(f"Thử sai quá nhiều, đợi {wait}s.")
-            acc = db_get(key) if key else None
-            pw = str(res.get("password") or "")
-            if not acc or not hmac.compare_digest(_hash(pw, acc["salt"]), acc["pw_hash"]):
-                _bad(key)
-                return say("Sai tên hoặc mật khẩu.")
-            _fails().pop(key, None)
-            ss["new_token"] = _new_token(acc)
-            db_put(acc)
-            ss["uk"] = key
-            say("Đăng nhập thành công!", True, go="vMain")
-        elif act == "resume":
-            if ss.get("uk"):
-                return
-            key = norm_name(res.get("name")).casefold()
-            tok = str(res.get("token") or "")
-            acc = db_get(key) if key and tok else None
-            h = _tok_hash(tok)
-            if acc and any(hmac.compare_digest(h, x) for x in (acc.get("token_hash") or "").split(",") if x):
-                ss["uk"] = key
-                ss.pop("msg", None)                        # tránh hiện lại thông báo cũ
-            else:
-                say("Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.", clear=True)
-        else:
-            uk = ss.get("uk")
-            acc = db_get(uk) if uk else None
-            if not acc:
-                ss.pop("uk", None)
-                return say("Bạn chưa đăng nhập.")
-            if act == "logout":
-                h = _tok_hash(str(res.get("token") or ""))
-                acc["token_hash"] = ",".join(x for x in (acc.get("token_hash") or "").split(",") if x and x != h)
-                db_put(acc)
-                ss.pop("uk", None)
-                say("Đã đăng xuất.", True, go="vMain", clear=True)
-            elif act == "score":
-                try:
-                    sc = max(0, min(999999, int(res.get("score"))))
-                except Exception:
-                    return
-                if sc > int(acc.get("score") or 0):
-                    db_bump_score(acc["key"], sc)
-            elif act == "avatar":
-                av = str(res.get("avatar") or "")
-                if not valid_avatar(av):
-                    return say("Ảnh đại diện không hợp lệ.")
-                acc["avatar"] = av
-                db_put(acc)
-                say("Đã đổi ảnh đại diện.", True)
-            elif act == "rename":
-                new = norm_name(res.get("name"))
-                if not NAME_RE.match(new):
-                    return say("Tên 3-16 ký tự: chữ, số, dấu cách hoặc _.")
-                nk = new.casefold()
-                if nk == acc["key"]:
-                    acc["name"] = new
-                    db_put(acc)
-                else:
-                    if db_get(nk):
-                        return say("Tên này đã có người dùng.")
-                    moved = dict(acc, key=nk, name=new)
-                    db_create(moved)
-                    db_del(acc["key"])
-                    ss["uk"] = nk
-                say("Đã đổi tên thành " + new, True)
-            elif act == "chpw":
-                ok, err = _pw_ok(acc, str(res.get("old") or ""))
-                if not ok:
-                    return say(err)
-                new = str(res.get("new") or "")
-                if not 4 <= len(new) <= 64:
-                    return say("Mật khẩu mới 4-64 ký tự.")
-                acc["salt"] = secrets.token_hex(16)
-                acc["pw_hash"] = _hash(new, acc["salt"])
-                acc["token_hash"] = ""                       # đăng xuất các thiết bị khác
-                ss["new_token"] = _new_token(acc)
-                db_put(acc)
-                say("Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại.", True)
-            elif act == "delete":
-                ok, err = _pw_ok(acc, str(res.get("password") or ""))
-                if not ok:
-                    return say(err)
-                db_del(acc["key"])
-                ss.pop("uk", None)
-                say("Đã xóa tài khoản.", True, go="vMain", clear=True)
-    except Exception:
-        say("Lỗi kết nối dữ liệu, hãy thử lại.")
-
-
+# ==================== NHÚNG GAME ====================
+FRONT = Path(__file__).parent / "game_frontend"
 PAGE = ("<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'></head><body>"
         + GAME_HTML + "</body></html>")
@@ -1372,28 +840,4 @@ if not index.exists() or index.read_text(encoding="utf-8") != PAGE:
     index.write_text(PAGE, encoding="utf-8")
 
 game = components.declare_component("choc_cho", path=str(FRONT))
-
-ss = st.session_state
-me = None
-if ss.get("uk"):
-    try:
-        me = db_get(ss["uk"])
-        if me is None:
-            ss.pop("uk", None)                                # tài khoản đã bị xóa
-        else:
-            ss["me_cache"] = public(me)
-    except Exception:
-        me = None
-user = public(me) if me else (ss.get("me_cache") if ss.get("uk") else None)
-tok = ss.pop("new_token", None)
-if tok:
-    ss["tok_id"] = ss.get("tok_id", 0) + 1
-
-result = game(board=db_list(), user=user, emojis=EMOJIS, msg=ss.get("msg"), token=tok,
-              token_id=ss.get("tok_id", 0), dev=bool(ss.get("dev_ok")), dev_msg=ss.get("dev_msg", ""),
-              storage=("supabase" if _sb() else "file"), key="game", default=None)
-
-if isinstance(result, dict) and result.get("sid") and result["sid"] != ss.get("last_sid"):
-    ss["last_sid"] = result["sid"]
-    handle_action(result)
-    st.rerun()
+game(key="game", default=None)
