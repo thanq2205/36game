@@ -675,7 +675,7 @@ function introStep(){
 }
 wrap.addEventListener('click',()=>{if(introT>25&&!introLoop)endIntro();});          // bỏ qua hoạt cảnh (không tính cú click vừa bấm Chơi)
 
-let lastNow=performance.now(); const SCORE_PS=10;      // điểm tăng đều theo giây: 10 điểm/giây
+let lastNow=performance.now(); const SCORE_PS=1;      // 1 giây = 1 điểm, đều đặn
 function loop(){
   requestAnimationFrame(loop); t+=.016;
   const nowT=performance.now(), dts=Math.min(.1,(nowT-lastNow)/1000); lastNow=nowT;
@@ -700,7 +700,7 @@ function loop(){
     dog.rotation.y=Math.PI+Math.sin(t*1.6)*.5; dhead.rotation.x=.45+Math.sin(t*5)*.08; jaw=.12+Math.abs(Math.sin(t*9))*.1;
     tail.rotation.z=Math.sin(t*22)*.6; if(++chewT%26===0)sfx.chomp();
   } else if(alive){
-    speed=Math.min(CH.slow?SPD0:SPDMAX,speed+.00004); score+=dts*SCORE_PS*CH.mult*(flyT>0?(flyType==='jet'?3:2):1); timer++;
+    speed=Math.min(CH.slow?SPD0:SPDMAX,speed+.00004); score+=dts*SCORE_PS; timer++;
     boostK+=(((flyT>0&&flyType==='jet')?1.45:1)-boostK)*.05;
     if(flyT>150&&!CH.fly&&--skyT<=0){skyT=55+Math.floor(Math.random()*30);spawnSky(55);}
     if(timer%Math.max(17,Math.floor(42-(speed-SPD0)*130))===0)spawn();
