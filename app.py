@@ -106,7 +106,7 @@ const wrap=$('wrap'), W=()=>wrap.clientWidth, H=()=>wrap.clientHeight;
 let AC=null, muted=false, quiet=false, musicT=null;
 /* ---- nhạc nền ---- */
 const bgm=new Audio('Run_Meme_loop_1min.mp3'); bgm.loop=true; bgm.volume=0.5; bgm.preload='auto';
-function musicPlay(){bgm.muted=muted; bgm.play().catch(()=>{});}
+function musicPlay(){bgm.muted=muted; bgm.currentTime=0; bgm.play().catch(()=>{});}
 function musicStop(){bgm.pause(); bgm.currentTime=0;}
 const ac=()=>{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();return AC};
 let BUS=null;
