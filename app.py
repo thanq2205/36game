@@ -73,7 +73,7 @@ GAME_HTML = r"""
   <div id="cap"></div><div id="skip">Space / chạm: bỏ qua</div>
   <button id="mute">🔊</button>
   <div id="msg"><div id="card">
-    <div id="vMain"><h1>CHỌC CHÓ</h1><div id="sub">Chọc chó xong thì... chạy đi! 🐕💨</div><div id="res"></div><div id="best"></div>
+    <div id="vMain"><h1>CHỌC CHÓ</h1><div id="sub"></div><div id="res"></div><div id="best"></div>
       <button class="btn g" id="go">▶ Chơi</button>
       <button class="btn" id="bg">Hướng dẫn</button>
       <button class="btn" id="mn">Về menu</button></div>
@@ -81,7 +81,7 @@ GAME_HTML = r"""
       ← → : đổi làn<br>↑ / Space : nhảy<br>↓ / S : cúi, trượt<br>
       Xe tải, xe rơm, máy cày: nhảy lên nóc chạy<br>Trâu, đá, khúc gỗ, hàng rào, xe máy, mương: nhảy qua<br>Cổng tre, cành cây thấp: cúi xuống<br>Vịt, xe cút kít, gạch, chum: nhảy qua<br>Cây, tường rơm cao: không nhảy được, đổi làn<br>Space: bỏ qua đoạn mở đầu · M: tắt tiếng<br>
       Nhặt bóng bay, cánh hoặc jetpack: bay lên trời, không sợ vật cản dưới đất. Trên trời có chim, diều, máy bay: ↑ ↓ đổi độ cao, ← → đổi làn để né, đụng là thua. Gần hết giờ bay có tiếng bíp, hạ cánh được bất tử vài giây. Chó mặc áo choàng Superman cũng bay đuổi theo!<br>
-      <span style="color:#b71c1c">Đụng 1 lần là chó cắn!</span></div>
+      <span style="color:#b71c1c"></span></div>
       <button class="btn" id="bk1">◀ Quay lại</button></div>
   </div></div>
   <div id="pad"><button id="bl">◀</button><button id="bj">▲</button><button id="bd">▼</button><button id="brt">▶</button></div>
