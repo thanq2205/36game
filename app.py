@@ -91,7 +91,7 @@ let best=0, overMode=false, curView='vMain', cheated=false, DEV=false;
 try{best=Math.floor(+localStorage.getItem('choc_best')||0)}catch(e){}
 const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function view(v){curView=v; ['vMain','vGuide'].forEach(i=>$(i).style.display=(i===v?'block':'none')); $('msg').classList.toggle('over',overMode&&v==='vMain');}
-$('mn').onclick=()=>{reset(); alive=false; overMode=false; showoff=false; dying=0; $('res').textContent=''; $('go').textContent='▶ Chơi'; view('vMain'); startIntro(true);};
+$('mn').onclick=()=>{reset(); alive=false; overMode=false; showoff=false; dying=0; $('res').textContent=''; $('go').textContent='▶ Chơi'; view('vMain'); musicStop(); startIntro(true);};
 function send(type,data){try{window.parent.postMessage(Object.assign({isStreamlitMessage:true,type:type},data||{}),'*');}catch(e){}}
 function setHeight(h){send('streamlit:setFrameHeight',{height:h});}
 send('streamlit:componentReady',{apiVersion:1});
@@ -104,6 +104,10 @@ const wrap=$('wrap'), W=()=>wrap.clientWidth, H=()=>wrap.clientHeight;
 
 /* ================= ÂM THANH ================= */
 let AC=null, muted=false, quiet=false, musicT=null;
+/* ---- nhạc nền ---- */
+const bgm=new Audio('Run_Meme_loop_1min.mp3'); bgm.loop=true; bgm.volume=0.5; bgm.preload='auto';
+function musicPlay(){bgm.muted=muted; bgm.play().catch(()=>{});}
+function musicStop(){bgm.pause(); bgm.currentTime=0;}
 const ac=()=>{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();return AC};
 let BUS=null;
 function OUT(){ if(!BUS){ BUS=AC.createDynamicsCompressor(); BUS.threshold.value=-14; BUS.knee.value=18; BUS.ratio.value=6; BUS.attack.value=.003; BUS.release.value=.2;
@@ -211,7 +215,7 @@ function ambience(on){
   cl.connect(clg); clg.connect(cg.gain); c.connect(cg); cg.connect(OUT()); c.start(); cl.start(); amb.push(c,cl);
   ambT=setInterval(()=>{const r=Math.random(); if(r<.6)chirp(); else if(r<.66)rooster(); else if(r<.72)chirp();},2000);
 }
-$('mute').onclick=()=>{muted=!muted;$('mute').textContent=muted?'🔇':'🔊'; if(ambWanted)ambience(!muted);};
+$('mute').onclick=()=>{muted=!muted; bgm.muted=muted;$('mute').textContent=muted?'🔇':'🔊'; if(ambWanted)ambience(!muted);};
 
 /* ================= CẢNH LÀNG QUÊ ================= */
 function canvasTex(w,h,draw,rx,ry){
@@ -564,7 +568,7 @@ function reset(){
   cx=0;cy=3.6;cz=6.5;lx=0;ly=1.2;lz=-6;
 }
 function end(type){
-  alive=false; dying=DY; dieY=y; dieV=0; y=0; stopFly(); invT=0; boostK=1; dogY=0; capeG.visible=false; dog.rotation.x=0;
+  bgm.pause(); alive=false; dying=DY; dieY=y; dieV=0; y=0; stopFly(); invT=0; boostK=1; dogY=0; capeG.visible=false; dog.rotation.x=0;
   if(type==='pit')sfx.splash(); else sfx.crash();
   if(type==='crow')sfx.caw();
   sfx.scream(); sfx.growl(); sfx.bark();
@@ -609,7 +613,7 @@ function goFull(){                                   // điện thoại: toàn m
     if(f&&!document.fullscreenElement){const pr=f.call(wrap); if(pr&&pr.then)pr.then(()=>{try{screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}).catch(()=>{});}
   }catch(e){}
 }
-$('go').onclick=e=>{if(e)e.stopPropagation(); goFull(); ac(); if(AC.state==='suspended')AC.resume(); ambWanted=true; ambience(true);
+$('go').onclick=e=>{if(e)e.stopPropagation(); goFull(); ac(); if(AC.state==='suspended')AC.resume(); ambWanted=true; ambience(true); musicPlay();
   $('msg').style.display='none'; startIntro(false);};
 
 /* ---------- ANIMATION MỞ ĐẦU: chọc chó -> chó dậy -> bị đuổi ---------- */
@@ -810,6 +814,10 @@ PAGE = ("<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'></head><body>"
         + GAME_HTML + "</body></html>")
 FRONT.mkdir(exist_ok=True)
+import shutil
+MUSIC = Path(__file__).parent / "Run_Meme_loop_1min.mp3"
+if MUSIC.exists() and not (FRONT / MUSIC.name).exists():
+    shutil.copy(MUSIC, FRONT / MUSIC.name)
 index = FRONT / "index.html"
 if not index.exists() or index.read_text(encoding="utf-8") != PAGE:
     index.write_text(PAGE, encoding="utf-8")
