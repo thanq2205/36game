@@ -579,7 +579,7 @@ function reset(){
   if(!DEV)Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0});
   cheated=cheatsOn(); hudName();
   player.position.set(0,0,0);player.rotation.set(0,0,0);player.scale.y=1;player.visible=true;
-  lim.armL.rotation.z=lim.armR.rotation.z=lim.legL.rotation.z=lim.legR.rotation.z=0; dogRage(false); mouthO.visible=false; eyeW.forEach(e=>{e.scale.y=1;}); tears.forEach(q=>{q.on=false;q.m.visible=false;}); dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;setEyes(true);mouthBone.visible=false;pile.visible=false;
+  lim.armL.rotation.z=lim.armR.rotation.z=lim.legL.rotation.z=lim.legR.rotation.z=0; dogGone=false; dogBarked=false; dogRage(false); mouthO.visible=false; eyeW.forEach(e=>{e.scale.y=1;}); tears.forEach(q=>{q.on=false;q.m.visible=false;}); dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;setEyes(true);mouthBone.visible=false;pile.visible=false;
   drops.forEach(d=>d.m.visible=false); pool.visible=false; boneFly.visible=false; $('blood').style.opacity=0;
   stopFly(); flyLv=0; invT=0; puCool=20; boostK=1; dieY=0; dieV=0; dogY=0; yellT=300; skyT=0; capeG.visible=false; dog.rotation.x=0; player.visible=true;
   cx=0;cy=3.6;cz=6.5;lx=0;ly=1.2;lz=-6;
@@ -695,23 +695,40 @@ function introStep(){
 wrap.addEventListener('click',()=>{if(introT>25&&!introLoop)endIntro();});          // bỏ qua hoạt cảnh (không tính cú click vừa bấm Chơi)
 
 /* chết: chó cắn đít, người chơi nằm sấp vùng vẫy la hét (không máu) */
+let dogGone=false, dogBarked=false;
 function thrash(k){
-  // chó kéo người ra giữa màn hình; người nằm ngửa khóc, hai tay đập con chó
-  const tz=-.6+Math.sin(k*.9)*.07;
-  player.rotation.x+=(1.45-player.rotation.x)*.09; player.rotation.y=0; player.rotation.z=Math.sin(k*9)*.03;     // nấc từng nhịp
+  // 1) chó cắn đít ~1 giây rồi bỏ đi; 2) người chơi cứ nằm khóc
+  const biting=k<85, tz=-.6+Math.sin(k*.9)*.07*(biting?1:0);
+  player.rotation.x+=(1.45-player.rotation.x)*.09; player.rotation.y=0; player.rotation.z=Math.sin(k*9)*.03;      // nấc từng nhịp
   player.position.x+=(0-player.position.x)*.05; player.position.z+=(tz-player.position.z)*.06;
   player.position.y=.2+Math.abs(Math.sin(k*.7))*.03; player.scale.y=1;
   const pz=player.position.z, px=player.position.x;
-  lim.armR.rotation.x=.65+Math.sin(k*2.4)*.45; lim.armR.rotation.z=-.35+Math.sin(k*2.4)*.1;      // đập vào chó
-  lim.armL.rotation.x=.6+Math.sin(k*2.4+Math.PI)*.45; lim.armL.rotation.z=.35-Math.sin(k*2.4+Math.PI)*.1;
-  lim.legL.rotation.x=Math.sin(k*2.3)*.5; lim.legR.rotation.x=Math.sin(k*2.3+2.2)*.5;
-  lim.legL.rotation.z=.15+Math.sin(k*1.7)*.2; lim.legR.rotation.z=-.15+Math.sin(k*1.7+1.5)*.2;
-  dog.position.x+=(px-dog.position.x)*.2; dog.position.z+=((pz-.89+Math.sin(k*.9+1)*.1)-dog.position.z)*.2; dog.position.y=.2+Math.abs(Math.sin(k*.9))*.04; dog.rotation.x+=(.4-dog.rotation.x)*.15;     // chúi mõm xuống ngoạm hông
-  dog.rotation.y+=((Math.PI+Math.sin(k*1.4)*.18)-dog.rotation.y)*.25; dhead.rotation.x=-.3+Math.sin(k*1.1)*.1; jaw=.05+(Math.sin(k*1.2)>0?.2:0); tail.rotation.z=Math.sin(k*20)*.6;
+  if(biting){
+    lim.armR.rotation.x=.65+Math.sin(k*2.4)*.45; lim.armR.rotation.z=-.35+Math.sin(k*2.4)*.1;                       // đập vào chó
+    lim.armL.rotation.x=.6+Math.sin(k*2.4+Math.PI)*.45; lim.armL.rotation.z=.35-Math.sin(k*2.4+Math.PI)*.1;
+    lim.legL.rotation.x=Math.sin(k*2.3)*.5; lim.legR.rotation.x=Math.sin(k*2.3+2.2)*.5;
+    lim.legL.rotation.z=.15+Math.sin(k*1.7)*.2; lim.legR.rotation.z=-.15+Math.sin(k*1.7+1.5)*.2;
+    dog.position.x+=(px-dog.position.x)*.2; dog.position.z+=((pz-.89+Math.sin(k*.9+1)*.1)-dog.position.z)*.2; dog.position.y=.2+Math.abs(Math.sin(k*.9))*.04;
+    dog.rotation.x+=(.4-dog.rotation.x)*.15; dog.rotation.y+=((Math.PI+Math.sin(k*1.4)*.18)-dog.rotation.y)*.25;
+    dhead.rotation.x=-.3+Math.sin(k*1.1)*.1; jaw=.05+(Math.sin(k*1.2)>0?.2:0); tail.rotation.z=Math.sin(k*20)*.6;
+    if(k>40&&k%24===0)sfx.slap();
+  } else {
+    // nằm ôm đau, nắm tay đấm xuống đất khóc nức nở, chân co giật yếu dần
+    const w=Math.max(.35,1-(k-85)/260);
+    lim.armR.rotation.x=.95+Math.sin(k*1.6)*.3*w; lim.armR.rotation.z=-.45+Math.sin(k*1.6)*.08;
+    lim.armL.rotation.x=.9+Math.sin(k*1.6+Math.PI)*.3*w; lim.armL.rotation.z=.45-Math.sin(k*1.6+Math.PI)*.08;
+    lim.legL.rotation.x=Math.sin(k*1.9)*.3*w; lim.legR.rotation.x=Math.sin(k*1.9+2.2)*.3*w;
+    lim.legL.rotation.z=.12; lim.legR.rotation.z=-.12;
+    // chó nhả ra, quay đi và bỏ đi
+    if(!dogBarked){dogBarked=true; sfx.bark(.7);}
+    dog.rotation.x+=(0-dog.rotation.x)*.15; dog.rotation.y+=(0-dog.rotation.y)*.12; dhead.rotation.x+=(0-dhead.rotation.x)*.15; jaw*=.8; tail.rotation.z=Math.sin(k*10)*.4;
+    dog.position.y+=(0-dog.position.y)*.2;
+    if(Math.abs(dog.rotation.y)<.35){dog.position.z-=.11; dog.position.x+=(px-dog.position.x)*.01+.0;}
+    if(k>100)dogGone=true;
+  }
   // mặt khóc: mắt nhắm híp, miệng há
   eyeW.forEach(e=>{e.scale.y=.3;}); mouthO.visible=true; mouthO.scale.y=1.2+Math.abs(Math.sin(k*.55))*2.2;
   if(k%3===0&&k>40)emitTear(k);
-  if(k>40&&k%24===0)sfx.slap();
 }
 let lastNow=performance.now(); const SCORE_PS=1;      // 1 giây = 1 điểm, đều đặn
 function loop(){
@@ -725,14 +742,13 @@ function loop(){
     else thrash(k);
     if(k===25){sfx.bite(); sfx.agh(); sfx.growl();}
     if(k===38)sfx.cry();
-    if(k===55||k===95)sfx.growl();
+    if(k===55)sfx.growl();
     if(k===115)sfx.cry();
     if(dying===0){showoff=true; chewT=0; showOver();}
   } else if(showoff){
     // chó vẫn ngoạm, người chơi vẫn vùng vẫy ở giữa màn hình
     thrash(DY+(++chewT));
     if(chewT%150===0&&chewT<600)sfx.cry();
-    if(chewT%190===95)sfx.growl();
   } else if(alive){
     speed=Math.min(CH.slow?SPD0:SPDMAX,speed+.00004); score+=dts*SCORE_PS; timer++;
     boostK+=(((flyT>0&&flyType==='jet')?1.45:1)-boostK)*.05;
@@ -816,8 +832,8 @@ function loop(){
   clouds.forEach(c=>{c.position.x+=.03; if(c.position.x>80)c.position.x=-80;});
   // camera: bình thường bám người chơi, khi chết zoom vào con chó
   const zoom=showoff||(dying>0&&dyk>=25), r=(showoff||dying>0)?.06:(introT>0?.08:.35), IN=introT>0&&introT<135;
-  const tcx=IN?3.2:(zoom?3.4:player.position.x*.4), tcy=IN?1.8:(zoom?1.9:3.6+player.position.y*.35), tcz=IN?4.2:(zoom?player.position.z+.3:6.5),
-        tlx=IN?-.6:(zoom?0:player.position.x*.2), tly=IN?1:(zoom?.4:1.2+player.position.y*.3), tlz=IN?0:(zoom?player.position.z+.3:-6);
+  const tcx=IN?3.2:(zoom?(dogGone?2.7:3.4):player.position.x*.4), tcy=IN?1.8:(zoom?1.9:3.6+player.position.y*.35), tcz=IN?4.2:(zoom?player.position.z+(dogGone?.9:.3):6.5),
+        tlx=IN?-.6:(zoom?0:player.position.x*.2), tly=IN?1:(zoom?.4:1.2+player.position.y*.3), tlz=IN?0:(zoom?player.position.z+(dogGone?.9:.3):-6);
   cx+=(tcx-cx)*r; cy+=(tcy-cy)*r; cz+=(tcz-cz)*r; lx+=(tlx-lx)*r; ly+=(tly-ly)*r; lz+=(tlz-lz)*r;
   const sh=shake>0?(shake--,(Math.random()-.5)*.3):0;
   cam.position.set(cx+sh+(cam.aspect<1&&zoom?2.2:0),cy+sh+(cam.aspect<1?1:0),cz+(cam.aspect<1&&!zoom?2.6:0)); cam.lookAt(lx,ly,lz);
