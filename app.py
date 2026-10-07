@@ -189,6 +189,7 @@ const sfx={
     else voice({f0:520*p,fm:820*p,tm:.25,f1:480*p,d:.55,vol:.45*v,att:.02,hold:.5,vib:8,vd:40,fmt:[[800,950],[1500,1800],[2900,3000]],q:7,breath:.08}); },
   cry:()=>{[0,.78,1.55].forEach(d=>{voice({f0:560,fm:650,tm:.2,f1:340,d:.66,vol:.4,att:.04,hold:.5,vib:9,vd:38,fmt:[[800,700],[1500,1400],[2800,2700]],q:6,breath:.1,bf:2800,dly:d}); nz(.13,.14,2200,1,.03,'bandpass',d+.68);});
     [1.9,2.1].forEach(d=>voice({f0:420,f1:330,d:.16,vol:.22,att:.01,hold:.4,vib:12,vd:25,fmt:[[700,650],[1400,1300]],q:5,breath:.12,dly:d})); },
+  slap:()=>{nz(.06,.3,1800,1,.002); tn(200,100,.07,'triangle',.12,500)},
   agh:()=>voice({f0:380,fm:700,tm:.2,f1:300,d:.35,vol:.5,att:.01,hold:.4,vib:12,vd:50,fmt:[[700,600],[1200,1000],[2500,2300]],q:5,breath:.12}),
   powerup:()=>{[523,659,784,1047,1319].forEach((f,i)=>{tn(f,f,.22,'triangle',.16,2400,i*.07); tn(f*2,f*2,.14,'sine',.04,4000,i*.07);}); nz(.5,.15,3000,.8,.1,'highpass')},
   flap:()=>{nz(.18,.18,450,1.2,.05,'lowpass'); nz(.12,.1,1500,1,.03,'bandpass',.1)},
@@ -379,8 +380,10 @@ player.add(bx(.8,.3,.52,0x1565c0,0,.78,0)); player.add(bx(.82,.06,.54,0x0d47a1,0
 const head=new THREE.Mesh(new THREE.SphereGeometry(.4,8,6),skin); head.position.y=1.85; player.add(head);
 for(const x of [-.4,.4]){const e=new THREE.Mesh(new THREE.SphereGeometry(.1,5,4),skin);e.position.set(x,1.83,0);player.add(e);}
 const ns=new THREE.Mesh(new THREE.ConeGeometry(.08,.14,4),skin); ns.rotation.x=-1.5; ns.position.set(0,1.8,-.4); player.add(ns);
-for(const x of [-.14,.14]){player.add(bx(.11,.08,.04,0xffffff,x,1.9,-.37)); player.add(bx(.05,.06,.045,0,x,1.9,-.38));}
+const eyeW=[];
+for(const x of [-.14,.14]){const w=bx(.11,.08,.04,0xffffff,x,1.9,-.37), pu=bx(.05,.06,.045,0,x,1.9,-.38); player.add(w); player.add(pu); eyeW.push(w,pu);}
 player.add(bx(.26,.05,.04,0xffffff,0,1.68,-.38));
+const mouthO=bx(.2,.08,.05,0x4a0c0c,0,1.66,-.4); mouthO.visible=false; player.add(mouthO);            // miệng há to khi khóc
 const hairM=L(0x0a0a0a);                                              // tóc đen, mái xéo
 const cap=new THREE.Mesh(new THREE.SphereGeometry(.44,8,6,0,Math.PI*2,0,Math.PI*.5),hairM); cap.position.set(0,1.87,.03); cap.rotation.x=.55; player.add(cap);
 const fr=bx(.62,.14,.2,0x0a0a0a,.06,2.13,-.3); fr.rotation.z=-.38; player.add(fr);
@@ -434,6 +437,18 @@ let lane=1,y=0,vy=0,floorY=0,speed=SPD0,score=0,alive=false,items=[],timer=0,gap
 function cast(g){g.traverse(o=>{if(o.isMesh)o.castShadow=true;});}
 road.receiveShadow=true; field.receiveShadow=true; cast(player); cast(dog);
 mouthBone.scale.set(1.5,1.5,1.5);
+/* mắt chó đỏ rực khi nổi điên */
+const eyeMeshes=dhead.children.filter(c=>c.userData&&c.userData.eye), eyeMat0=eyeMeshes[0].material, rageMat=new THREE.MeshBasicMaterial({color:0xff0000});
+const glows=eyeMeshes.map(e=>{const g=new THREE.Mesh(new THREE.BoxGeometry(.2,.2,.03),new THREE.MeshBasicMaterial({color:0xff2200,transparent:true,opacity:.35,depthWrite:false})); g.position.set(e.position.x,e.position.y,e.position.z); g.visible=false; dhead.add(g); return g;});
+function dogRage(on){eyeMeshes.forEach(e=>{e.material=on?rageMat:eyeMat0; e.scale.x=e.scale.z=on?1.8:1;}); glows.forEach(g=>{g.visible=on;});}
+/* nước mắt */
+const tears=[]; for(let i=0;i<28;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(.07,.07,.07),new THREE.MeshBasicMaterial({color:0x9be7ff})); m.visible=false; scene.add(m); tears.push({m,vx:0,vy:0,vz:0,on:false});}
+let tearI=0;
+function emitTear(k){
+  const c=Math.cos(player.rotation.x), sn=Math.sin(player.rotation.x), ex=(tearI%2?.14:-.14), ey=1.9, ez=-.4, tr=tears[tearI++%tears.length];
+  tr.m.position.set(player.position.x+ex*1.2, player.position.y+ey*c-ez*sn+.05, player.position.z+ey*sn+ez*c);
+  tr.vx=(ex>0?1:-1)*(.012+Math.random()*.02); tr.vy=.03+Math.random()*.035; tr.vz=(Math.random()-.5)*.03; tr.on=true; tr.m.visible=true;
+}
 /* đống xương người (hoạt hình) */
 const pile=new THREE.Group(); pile.visible=false; scene.add(pile);
 {const bm=0xf3ecd6; const sk=new THREE.Mesh(new THREE.SphereGeometry(.22,7,6),L(bm)); sk.position.set(.15,.22,0); pile.add(sk);
@@ -564,13 +579,13 @@ function reset(){
   if(!DEV)Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0});
   cheated=cheatsOn(); hudName();
   player.position.set(0,0,0);player.rotation.set(0,0,0);player.scale.y=1;player.visible=true;
-  lim.armL.rotation.z=lim.armR.rotation.z=lim.legL.rotation.z=lim.legR.rotation.z=0; dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;setEyes(true);mouthBone.visible=false;pile.visible=false;
+  lim.armL.rotation.z=lim.armR.rotation.z=lim.legL.rotation.z=lim.legR.rotation.z=0; dogRage(false); mouthO.visible=false; eyeW.forEach(e=>{e.scale.y=1;}); tears.forEach(q=>{q.on=false;q.m.visible=false;}); dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;setEyes(true);mouthBone.visible=false;pile.visible=false;
   drops.forEach(d=>d.m.visible=false); pool.visible=false; boneFly.visible=false; $('blood').style.opacity=0;
   stopFly(); flyLv=0; invT=0; puCool=20; boostK=1; dieY=0; dieV=0; dogY=0; yellT=300; skyT=0; capeG.visible=false; dog.rotation.x=0; player.visible=true;
   cx=0;cy=3.6;cz=6.5;lx=0;ly=1.2;lz=-6;
 }
 function end(type){
-  bgm.pause(); alive=false; dying=DY; dieX=player.position.x; dieY=y; dieV=0; y=0; stopFly(); invT=0; boostK=1; dogY=0; capeG.visible=false; dog.rotation.x=0;
+  bgm.pause(); alive=false; dying=DY; dieX=player.position.x; dieY=y; dogRage(true); dieV=0; y=0; stopFly(); invT=0; boostK=1; dogY=0; capeG.visible=false; dog.rotation.x=0;
   if(type==='pit')sfx.splash(); else sfx.crash();
   if(type==='crow')sfx.caw();
   sfx.yell(1.2); sfx.growl(); sfx.bark();
@@ -681,16 +696,22 @@ wrap.addEventListener('click',()=>{if(introT>25&&!introLoop)endIntro();});      
 
 /* chết: chó cắn đít, người chơi nằm sấp vùng vẫy la hét (không máu) */
 function thrash(k){
-  const px=dieX, t0=Math.max(0,k-25), pz=-Math.min(t0,220)*.009+Math.sin(k*.9)*.07;      // bò lết dần về phía trước, bị chó giật ngược
-  player.rotation.x+=(-1.45-player.rotation.x)*.12; player.rotation.z=0; player.rotation.y=Math.sin(k*.8)*.1;
-  player.position.set(px+Math.sin(k*1.1)*.08,.18+Math.abs(Math.sin(k*1.9))*.06,pz); player.scale.y=1;
-  const c=k*1.3;                                                                            // tay cào đất luân phiên, chân đạp loạn
-  lim.armL.rotation.x=-2.6+Math.sin(c)*.55; lim.armR.rotation.x=-2.6-Math.sin(c)*.55;
-  lim.armL.rotation.z=.25+Math.sin(k*1.9)*.35; lim.armR.rotation.z=-.25-Math.sin(k*1.9+1)*.35;
-  lim.legL.rotation.x=Math.sin(k*2.3)*.8; lim.legR.rotation.x=Math.sin(k*2.3+2.2)*.8;
-  lim.legL.rotation.z=Math.sin(k*1.7)*.3; lim.legR.rotation.z=Math.sin(k*1.7+1.5)*.3;
-  dog.position.set(px+Math.sin(k*1.4)*.06,.1+Math.abs(Math.sin(k*.9))*.05,pz+.4+Math.sin(k*.9)*.1);
-  dog.rotation.y=Math.sin(k*1.4)*.3; dhead.rotation.x=-.4+Math.sin(k*1.1)*.1; jaw=.05+(Math.sin(k*1.2)>0?.22:0); tail.rotation.z=Math.sin(k*20)*.6;
+  // chó kéo người ra giữa màn hình; người nằm ngửa khóc, hai tay đập con chó
+  const tz=-.6+Math.sin(k*.9)*.07;
+  player.rotation.x+=(1.45-player.rotation.x)*.09; player.rotation.y=0; player.rotation.z=Math.sin(k*9)*.03;     // nấc từng nhịp
+  player.position.x+=(0-player.position.x)*.05; player.position.z+=(tz-player.position.z)*.06;
+  player.position.y=.2+Math.abs(Math.sin(k*.7))*.03; player.scale.y=1;
+  const pz=player.position.z, px=player.position.x;
+  lim.armR.rotation.x=.65+Math.sin(k*2.4)*.45; lim.armR.rotation.z=-.35+Math.sin(k*2.4)*.1;      // đập vào chó
+  lim.armL.rotation.x=.6+Math.sin(k*2.4+Math.PI)*.45; lim.armL.rotation.z=.35-Math.sin(k*2.4+Math.PI)*.1;
+  lim.legL.rotation.x=Math.sin(k*2.3)*.5; lim.legR.rotation.x=Math.sin(k*2.3+2.2)*.5;
+  lim.legL.rotation.z=.15+Math.sin(k*1.7)*.2; lim.legR.rotation.z=-.15+Math.sin(k*1.7+1.5)*.2;
+  dog.position.x+=(px-dog.position.x)*.2; dog.position.z+=((pz-.89+Math.sin(k*.9+1)*.1)-dog.position.z)*.2; dog.position.y=.2+Math.abs(Math.sin(k*.9))*.04; dog.rotation.x+=(.4-dog.rotation.x)*.15;     // chúi mõm xuống ngoạm hông
+  dog.rotation.y+=((Math.PI+Math.sin(k*1.4)*.18)-dog.rotation.y)*.25; dhead.rotation.x=-.3+Math.sin(k*1.1)*.1; jaw=.05+(Math.sin(k*1.2)>0?.2:0); tail.rotation.z=Math.sin(k*20)*.6;
+  // mặt khóc: mắt nhắm híp, miệng há
+  eyeW.forEach(e=>{e.scale.y=.3;}); mouthO.visible=true; mouthO.scale.y=1.2+Math.abs(Math.sin(k*.55))*2.2;
+  if(k%3===0&&k>40)emitTear(k);
+  if(k>40&&k%24===0)sfx.slap();
 }
 let lastNow=performance.now(); const SCORE_PS=1;      // 1 giây = 1 điểm, đều đặn
 function loop(){
@@ -783,6 +804,7 @@ function loop(){
   if(alive&&dogY>.25){dl[0].rotation.x=dl[1].rotation.x=1.2; dl[2].rotation.x=dl[3].rotation.x=-1.2;}
   if(capeG.visible)capeS.forEach((q,i)=>q.rotation.x=-.12+Math.sin(t*14-i*1.1)*(.12+i*.07));
   jawG.rotation.x=-jaw;
+  tears.forEach(q=>{if(!q.on)return; q.vy-=.004; q.m.position.x+=q.vx; q.m.position.y+=q.vy; q.m.position.z+=q.vz; if(q.m.position.y<.04){q.on=false; q.m.visible=false;}});
   drops.forEach(d=>{if(!d.m.visible)return; d.vy-=.006; d.m.position.x+=d.vx; d.m.position.y+=d.vy; d.m.position.z+=d.vz;
     if(d.m.position.y<.06){d.m.position.y=.06;d.vx=d.vy=d.vz=0;}});
   roadTex.offset.y+=mv*2/8; riceTex.offset.y+=mv*2/8;
@@ -793,12 +815,12 @@ function loop(){
     const f=Math.sin(t*14+u.ph)*.7; u.wl.rotation.z=f; u.wr.rotation.z=-f; b.position.y+=Math.sin(t*2+u.ph)*.005;});
   clouds.forEach(c=>{c.position.x+=.03; if(c.position.x>80)c.position.x=-80;});
   // camera: bình thường bám người chơi, khi chết zoom vào con chó
-  const zoom=showoff||(dying>0&&dyk>=25), r=(showoff||dying>0)?.05:(introT>0?.08:.35), IN=introT>0&&introT<135;
-  const tcx=IN?3.2:(zoom?dieX*.5:player.position.x*.4), tcy=IN?1.8:(zoom?2.1:3.6+player.position.y*.35), tcz=IN?4.2:(zoom?4.8+player.position.z*.6:6.5),
-        tlx=IN?-.6:(zoom?dieX*.3:player.position.x*.2), tly=IN?1:(zoom?.4:1.2+player.position.y*.3), tlz=IN?0:(zoom?-.3+player.position.z*.7:-6);
+  const zoom=showoff||(dying>0&&dyk>=25), r=(showoff||dying>0)?.06:(introT>0?.08:.35), IN=introT>0&&introT<135;
+  const tcx=IN?3.2:(zoom?3.4:player.position.x*.4), tcy=IN?1.8:(zoom?1.9:3.6+player.position.y*.35), tcz=IN?4.2:(zoom?player.position.z+.3:6.5),
+        tlx=IN?-.6:(zoom?0:player.position.x*.2), tly=IN?1:(zoom?.4:1.2+player.position.y*.3), tlz=IN?0:(zoom?player.position.z+.3:-6);
   cx+=(tcx-cx)*r; cy+=(tcy-cy)*r; cz+=(tcz-cz)*r; lx+=(tlx-lx)*r; ly+=(tly-ly)*r; lz+=(tlz-lz)*r;
   const sh=shake>0?(shake--,(Math.random()-.5)*.3):0;
-  cam.position.set(cx+sh,cy+sh+(cam.aspect<1?1:0),cz+(cam.aspect<1?2.6:0)); cam.lookAt(lx,ly,lz);
+  cam.position.set(cx+sh+(cam.aspect<1&&zoom?2.2:0),cy+sh+(cam.aspect<1?1:0),cz+(cam.aspect<1&&!zoom?2.6:0)); cam.lookAt(lx,ly,lz);
   renderer.render(scene,cam);
 }
 loop();
