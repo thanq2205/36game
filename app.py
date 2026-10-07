@@ -66,6 +66,7 @@ GAME_HTML = r"""
   #rankMe{font-size:12px;font-weight:bold;margin:2px 0 6px;color:#5b3a1e}
   #rank td{vertical-align:middle} #rank .av{margin:0}
   #vDev{touch-action:pan-y}
+  #credit{margin-top:6px;font-size:11px;font-weight:bold;letter-spacing:2px;color:#7a5a38;text-align:center;text-transform:none}
 </style>
 <div id="wrap">
   <div id="hud"><span id="n"></span><span id="s">0</span></div>
@@ -76,7 +77,8 @@ GAME_HTML = r"""
     <div id="vMain"><h1>CHỌC CHÓ</h1><div id="sub"></div><div id="res"></div><div id="best"></div>
       <button class="btn g" id="go">▶ Chơi</button>
       <button class="btn" id="bg">Hướng dẫn</button>
-      <button class="btn" id="mn">Về menu</button></div>
+      <button class="btn" id="mn">Về menu</button>
+      <div id="credit">GAME BY thang99</div></div>
     <div id="vGuide" style="display:none"><h1>Hướng dẫn</h1><div id="guide">
   TỐT NHẤT ĐỪNG CHỌC!<br>
       <span style="color:#b71c1c"></span></div>
