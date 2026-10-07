@@ -78,7 +78,7 @@ GAME_HTML = r"""
       <button class="btn" id="bg">Hướng dẫn</button>
       <button class="btn" id="mn">Về menu</button></div>
     <div id="vGuide" style="display:none"><h1>Hướng dẫn</h1><div id="guide">
-  chạy thôi<br>
+  TỐT NHẤT ĐỪNG CHỌC!<br>
       <span style="color:#b71c1c"></span></div>
       <button class="btn" id="bk1">◀ Quay lại</button></div>
   </div></div>
