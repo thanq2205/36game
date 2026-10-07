@@ -106,8 +106,11 @@ const wrap=$('wrap'), W=()=>wrap.clientWidth, H=()=>wrap.clientHeight;
 let AC=null, muted=false, quiet=false, musicT=null;
 /* ---- nhạc nền ---- */
 const bgm=new Audio('Run_Meme_loop_1min.mp3'); bgm.loop=true; bgm.volume=0.5; bgm.preload='auto';
-function musicPlay(){bgm.muted=muted; bgm.currentTime=0; bgm.play().catch(()=>{});}
+function musicPlay(){bgm.muted=muted; bgm.currentTime=0; bgm.play().catch(()=>{});
+  cryClip.muted=true; cryClip.play().then(()=>{cryClip.pause(); cryClip.currentTime=0; cryClip.muted=muted;}).catch(()=>{});}   // 'mở khóa' tiếng khóc cho điện thoại
 function musicStop(){bgm.pause(); bgm.currentTime=0;}
+const cryClip=new Audio('cry-banana-cat.mp3'); cryClip.volume=1; cryClip.preload='auto';   // tiếng khóc khi bị chó cắn
+function cryStop(){cryClip.pause(); cryClip.currentTime=0;}
 const ac=()=>{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();return AC};
 let BUS=null;
 function OUT(){ if(!BUS){ BUS=AC.createDynamicsCompressor(); BUS.threshold.value=-14; BUS.knee.value=18; BUS.ratio.value=6; BUS.attack.value=.003; BUS.release.value=.2;
@@ -187,8 +190,7 @@ const sfx={
   yell:(v,ex)=>{ v=v||1; const p=.9+Math.random()*.2;
     if(ex)voice({f0:330*p,fm:640*p,tm:.3,f1:560*p,d:.7,vol:.4*v,att:.04,hold:.6,vib:6,vd:25,fmt:[[600,850],[1200,1500],[2600,2800]],q:6,breath:.05});
     else voice({f0:520*p,fm:820*p,tm:.25,f1:480*p,d:.55,vol:.45*v,att:.02,hold:.5,vib:8,vd:40,fmt:[[800,950],[1500,1800],[2900,3000]],q:7,breath:.08}); },
-  cry:()=>{[0,.78,1.55].forEach(d=>{voice({f0:560,fm:650,tm:.2,f1:340,d:.66,vol:.4,att:.04,hold:.5,vib:9,vd:38,fmt:[[800,700],[1500,1400],[2800,2700]],q:6,breath:.1,bf:2800,dly:d}); nz(.13,.14,2200,1,.03,'bandpass',d+.68);});
-    [1.9,2.1].forEach(d=>voice({f0:420,f1:330,d:.16,vol:.22,att:.01,hold:.4,vib:12,vd:25,fmt:[[700,650],[1400,1300]],q:5,breath:.12,dly:d})); },
+  cry:()=>{ if(muted||quiet)return; cryClip.muted=false; cryClip.currentTime=0; cryClip.play().catch(()=>{}); },
   slap:()=>{nz(.06,.3,1800,1,.002); tn(200,100,.07,'triangle',.12,500)},
   agh:()=>voice({f0:380,fm:700,tm:.2,f1:300,d:.35,vol:.5,att:.01,hold:.4,vib:12,vd:50,fmt:[[700,600],[1200,1000],[2500,2300]],q:5,breath:.12}),
   powerup:()=>{[523,659,784,1047,1319].forEach((f,i)=>{tn(f,f,.22,'triangle',.16,2400,i*.07); tn(f*2,f*2,.14,'sine',.04,4000,i*.07);}); nz(.5,.15,3000,.8,.1,'highpass')},
@@ -218,7 +220,7 @@ function ambience(on){
   cl.connect(clg); clg.connect(cg.gain); c.connect(cg); cg.connect(OUT()); c.start(); cl.start(); amb.push(c,cl);
   ambT=setInterval(()=>{const r=Math.random(); if(r<.6)chirp(); else if(r<.66)rooster(); else if(r<.72)chirp();},2000);
 }
-$('mute').onclick=()=>{muted=!muted; bgm.muted=muted;$('mute').textContent=muted?'🔇':'🔊'; if(ambWanted)ambience(!muted);};
+$('mute').onclick=()=>{muted=!muted; bgm.muted=muted; cryClip.muted=muted;$('mute').textContent=muted?'🔇':'🔊'; if(ambWanted)ambience(!muted);};
 
 /* ================= CẢNH LÀNG QUÊ ================= */
 function canvasTex(w,h,draw,rx,ry){
@@ -577,6 +579,7 @@ function spawn(){
   if(Math.random()<.3)mk(pk(LOWS),Math.floor(Math.random()*3),8);          // chuỗi vật cản liên tiếp
 }
 function reset(){
+  cryStop();
   items.forEach(o=>scene.remove(o.m)); items=[];
   lane=1;y=0;vy=0;floorY=0;speed=SPD0;score=DEV?CH.start:0;timer=0;gap=4;shake=0;duckT=0;dying=0;alive=true;wasAir=false;showoff=false;overMode=false;
   $('msg').classList.remove('over');
@@ -745,14 +748,12 @@ function loop(){
     if(k<25){dog.position.z+=(.4-dog.position.z)*.2; dog.position.x+=(player.position.x-dog.position.x)*.2; dog.position.y=floorY+dieY+Math.sin(k/25*Math.PI)*.9; jaw=.7; dieV+=.035; dieY=Math.max(0,dieY-dieV); player.position.y=dieY; player.rotation.x+=(-.2-player.rotation.x)*.2;}
     else thrash(k);
     if(k===25){sfx.bite(); sfx.agh(); sfx.growl();}
-    if(k===38)sfx.cry();
+    if(k===25)sfx.cry();
     if(k===55)sfx.growl();
-    if(k===115)sfx.cry();
     if(dying===0){showoff=true; chewT=0; showOver();}
   } else if(showoff){
     // chó vẫn ngoạm, người chơi vẫn vùng vẫy ở giữa màn hình
     thrash(DY+(++chewT));
-    if(chewT%150===0&&chewT<600)sfx.cry();
   } else if(alive){
     speed=Math.min(CH.slow?SPD0:SPDMAX,speed+.00004); score+=dts*SCORE_PS; timer++;
     boostK+=(((flyT>0&&flyType==='jet')?1.45:1)-boostK)*.05;
@@ -868,9 +869,10 @@ PAGE = ("<!doctype html><html><head><meta charset='utf-8'>"
         + GAME_HTML + "</body></html>")
 FRONT.mkdir(exist_ok=True)
 import shutil
-MUSIC = Path(__file__).parent / "Run_Meme_loop_1min.mp3"
-if MUSIC.exists() and not (FRONT / MUSIC.name).exists():
-    shutil.copy(MUSIC, FRONT / MUSIC.name)
+for _name in ("Run_Meme_loop_1min.mp3", "cry-banana-cat.mp3"):
+    _src = Path(__file__).parent / _name
+    if _src.exists() and not (FRONT / _name).exists():
+        shutil.copy(_src, FRONT / _name)
 index = FRONT / "index.html"
 if not index.exists() or index.read_text(encoding="utf-8") != PAGE:
     index.write_text(PAGE, encoding="utf-8")
