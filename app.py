@@ -270,22 +270,26 @@ const roadTex=canvasTex(256,256,(x,w,h)=>{
   x.fillStyle='rgba(120,85,50,.35)'; for(const f of [.15,.22,.47,.53,.78,.85])x.fillRect(w*f-3,0,6,h);
   x.fillStyle='rgba(255,255,255,.35)'; x.fillRect(w*.375-2,0,4,h*.4); x.fillRect(w*.625-2,0,4,h*.4);
   x.fillStyle='#7cb342'; x.fillRect(0,0,9,h); x.fillRect(w-9,0,9,h);
-},1,25);
-const road=new THREE.Mesh(new THREE.PlaneGeometry(8,240),new THREE.MeshLambertMaterial({map:roadTex}));
-road.rotation.x=-Math.PI/2; road.position.z=-110; scene.add(road);
+},1,31);
+const road=new THREE.Mesh(new THREE.PlaneGeometry(8,300),new THREE.MeshLambertMaterial({map:roadTex}));
+road.rotation.x=-Math.PI/2; road.position.z=-80; scene.add(road);
 // nền rừng: thảm cỏ xanh
 const riceTex=canvasTex(128,128,(x,w,h)=>{
   x.fillStyle='#3f9e2a'; x.fillRect(0,0,w,h);
   for(let i=0;i<60;i++){x.fillStyle=Math.random()<.5?'#4cb534':'#2f8a20'; x.beginPath(); x.arc(Math.random()*w,Math.random()*h,6+Math.random()*14,0,7); x.fill();}
   for(let i=0;i<1400;i++){x.fillStyle=Math.random()<.5?'#7fd23a':'#2a7d1c'; x.fillRect(Math.random()*w,Math.random()*h,1,3+Math.random()*3);}
   for(let i=0;i<40;i++){x.fillStyle=['#ffeb3b','#ffffff','#f48fb1'][i%3]; x.fillRect(Math.random()*w,Math.random()*h,2,2);}
-},36,30);
-const field=new THREE.Mesh(new THREE.PlaneGeometry(300,240),new THREE.MeshLambertMaterial({map:riceTex}));
-field.rotation.x=-Math.PI/2; field.position.set(0,-.05,-110); scene.add(field);
+},36,37.5);
+const field=new THREE.Mesh(new THREE.PlaneGeometry(300,300),new THREE.MeshLambertMaterial({map:riceTex}));
+field.rotation.x=-Math.PI/2; field.position.set(0,-.05,-80); scene.add(field);
 // núi xa + đồi xanh
 const mts=new THREE.MeshLambertMaterial({color:0x8fb4d6,flatShading:true});
 for(let i=0;i<9;i++){const m=new THREE.Mesh(new THREE.ConeGeometry(22+Math.random()*14,18+Math.random()*16,6),mts);
   m.position.set(-110+i*28,8,-128-Math.random()*10); scene.add(m);}
+for(const sx of [-1,1])for(let i=0;i<8;i++){const m=new THREE.Mesh(new THREE.ConeGeometry(22+Math.random()*14,18+Math.random()*16,6),mts);
+  m.position.set(sx*(135+Math.random()*8),8,-120+i*24); scene.add(m);}
+for(const sx of [-1,1])for(let i=0;i<8;i++){const m=new THREE.Mesh(new THREE.SphereGeometry(1,8,5),L(i%2?0x3f9a3a:0x4aa83f));
+  m.scale.set(14,7+Math.random()*5,26+Math.random()*10); m.position.set(sx*(122+Math.random()*6),0,-118+i*24); scene.add(m);}
 for(let i=0;i<10;i++){const m=new THREE.Mesh(new THREE.SphereGeometry(1,8,5),L(i%2?0x3f9a3a:0x4aa83f));
   m.scale.set(26+Math.random()*10,8+Math.random()*5,14); m.position.set(-125+i*28,0,-108-Math.random()*8); scene.add(m);}
 
@@ -340,22 +344,22 @@ const near=[bush,bush,flowers,grass,grass,()=>oak(.6)];
 const mid=[()=>oak(1),()=>oak(1.1),()=>pine(1),()=>birch(1),palm,banana,()=>blossom(1),()=>oak(1.2),()=>pine(1.2)];
 const far=[()=>oak(1.7),()=>pine(1.8),()=>pine(1.5),()=>oak(1.5),bamboo,()=>birch(1.6),()=>oak(2)];
 for(const sx of [-1,1]){
-  for(let i=0;i<30;i++)addDeco(pk(near)(), sx*(5.1+Math.random()*2.2), -i*4-Math.random()*3);
-  for(let i=0;i<32;i++)addDeco(pk(mid)(), sx*(7.6+Math.random()*6), -i*3.8-Math.random()*3);
-  for(let i=0;i<36;i++)addDeco(pk(far)(), sx*(14+Math.random()*18), -i*3.4-Math.random()*3);
-  for(let i=0;i<4;i++){const h=house(); h.rotation.y=sx>0?-Math.PI/2:Math.PI/2; addDeco(h,sx*(10+Math.random()*3),-i*30-(sx>0?14:0)-8);}
+  for(let i=-12;i<30;i++)addDeco(pk(near)(), sx*(5.1+Math.random()*2.2), -i*4-Math.random()*3);
+  for(let i=-12;i<32;i++)addDeco(pk(mid)(), sx*(7.6+Math.random()*6), -i*3.8-Math.random()*3);
+  for(let i=-14;i<36;i++)addDeco(pk(far)(), sx*(14+Math.random()*18), -i*3.4-Math.random()*3);
+  for(let i=-1;i<4;i++){const h=house(); h.rotation.y=sx>0?-Math.PI/2:Math.PI/2; addDeco(h,sx*(10+Math.random()*3),-i*30-(sx>0?14:0)-8);}
 }
 // cỏ + hoa 3D (instanced)
 const tuftN=700, tuft=new THREE.InstancedMesh(new THREE.ConeGeometry(.1,.55,4),L(0x62c033),tuftN), tp=[], d0=new THREE.Object3D();
-for(let i=0;i<tuftN;i++)tp.push({x:(Math.random()<.5?-1:1)*(4.7+Math.random()*16),z:-Math.random()*120,s:.7+Math.random()*.9});
+for(let i=0;i<tuftN;i++)tp.push({x:(Math.random()<.5?-1:1)*(4.7+Math.random()*16),z:48-Math.random()*168,s:.7+Math.random()*.9});
 tuft.frustumCulled=false; scene.add(tuft);
 const flN=450, fl=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.09,0),new THREE.MeshLambertMaterial({flatShading:true}),flN), fp=[];
 const FC=[0xffeb3b,0xf48fb1,0xffffff,0xff7043,0xce93d8].map(c=>new THREE.Color(c));
-for(let i=0;i<flN;i++){fp.push({x:(Math.random()<.5?-1:1)*(4.7+Math.random()*10),z:-Math.random()*120}); fl.setColorAt(i,pk(FC));}
+for(let i=0;i<flN;i++){fp.push({x:(Math.random()<.5?-1:1)*(4.7+Math.random()*10),z:48-Math.random()*168}); fl.setColorAt(i,pk(FC));}
 fl.instanceColor.needsUpdate=true; fl.frustumCulled=false; scene.add(fl);
 function updTufts(mv){
-  tp.forEach((q,i)=>{q.z+=mv*2; if(q.z>8)q.z-=120; d0.position.set(q.x,.25*q.s,q.z); d0.scale.set(q.s,q.s,q.s); d0.updateMatrix(); tuft.setMatrixAt(i,d0.matrix);}); tuft.instanceMatrix.needsUpdate=true;
-  fp.forEach((q,i)=>{q.z+=mv*2; if(q.z>8)q.z-=120; d0.position.set(q.x,.15,q.z); d0.scale.set(1,1,1); d0.updateMatrix(); fl.setMatrixAt(i,d0.matrix);}); fl.instanceMatrix.needsUpdate=true;
+  tp.forEach((q,i)=>{q.z+=mv*2; if(q.z>50)q.z-=170; d0.position.set(q.x,.25*q.s,q.z); d0.scale.set(q.s,q.s,q.s); d0.updateMatrix(); tuft.setMatrixAt(i,d0.matrix);}); tuft.instanceMatrix.needsUpdate=true;
+  fp.forEach((q,i)=>{q.z+=mv*2; if(q.z>50)q.z-=170; d0.position.set(q.x,.15,q.z); d0.scale.set(1,1,1); d0.updateMatrix(); fl.setMatrixAt(i,d0.matrix);}); fl.instanceMatrix.needsUpdate=true;
 }
 // chim bay
 const birds=[];
@@ -824,7 +828,7 @@ function loop(){
   drops.forEach(d=>{if(!d.m.visible)return; d.vy-=.006; d.m.position.x+=d.vx; d.m.position.y+=d.vy; d.m.position.z+=d.vz;
     if(d.m.position.y<.06){d.m.position.y=.06;d.vx=d.vy=d.vz=0;}});
   roadTex.offset.y+=mv*2/8; riceTex.offset.y+=mv*2/8;
-  deco.forEach(d=>{d.position.z+=mv*2; if(d.position.z>8)d.position.z-=120;});
+  deco.forEach(d=>{d.position.z+=mv*2; if(d.position.z>50)d.position.z-=170;});
   updTufts(mv);
   farmers.forEach(f=>{const u=f.userData; u.body.rotation.x=.95+Math.sin(t*1.4+u.ph)*.3; u.arm.rotation.x=-.95+Math.sin(t*2.8+u.ph)*.5;});
   birds.forEach(b=>{const u=b.userData; b.position.x+=u.dir*u.sp*1.2; if(b.position.x>60)b.position.x=-60; if(b.position.x<-60)b.position.x=60;
