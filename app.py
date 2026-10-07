@@ -187,6 +187,8 @@ const sfx={
   yell:(v,ex)=>{ v=v||1; const p=.9+Math.random()*.2;
     if(ex)voice({f0:330*p,fm:640*p,tm:.3,f1:560*p,d:.7,vol:.4*v,att:.04,hold:.6,vib:6,vd:25,fmt:[[600,850],[1200,1500],[2600,2800]],q:6,breath:.05});
     else voice({f0:520*p,fm:820*p,tm:.25,f1:480*p,d:.55,vol:.45*v,att:.02,hold:.5,vib:8,vd:40,fmt:[[800,950],[1500,1800],[2900,3000]],q:7,breath:.08}); },
+  cry:()=>{[0,.78,1.55].forEach(d=>{voice({f0:560,fm:650,tm:.2,f1:340,d:.66,vol:.4,att:.04,hold:.5,vib:9,vd:38,fmt:[[800,700],[1500,1400],[2800,2700]],q:6,breath:.1,bf:2800,dly:d}); nz(.13,.14,2200,1,.03,'bandpass',d+.68);});
+    [1.9,2.1].forEach(d=>voice({f0:420,f1:330,d:.16,vol:.22,att:.01,hold:.4,vib:12,vd:25,fmt:[[700,650],[1400,1300]],q:5,breath:.12,dly:d})); },
   agh:()=>voice({f0:380,fm:700,tm:.2,f1:300,d:.35,vol:.5,att:.01,hold:.4,vib:12,vd:50,fmt:[[700,600],[1200,1000],[2500,2300]],q:5,breath:.12}),
   powerup:()=>{[523,659,784,1047,1319].forEach((f,i)=>{tn(f,f,.22,'triangle',.16,2400,i*.07); tn(f*2,f*2,.14,'sine',.04,4000,i*.07);}); nz(.5,.15,3000,.8,.1,'highpass')},
   flap:()=>{nz(.18,.18,450,1.2,.05,'lowpass'); nz(.12,.1,1500,1,.03,'bandpass',.1)},
@@ -562,7 +564,7 @@ function reset(){
   if(!DEV)Object.assign(CH,{fly:false,god:false,mult:1,slow:false,start:0});
   cheated=cheatsOn(); hudName();
   player.position.set(0,0,0);player.rotation.set(0,0,0);player.scale.y=1;player.visible=true;
-  lim.armL.rotation.z=lim.armR.rotation.z=0; dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;setEyes(true);mouthBone.visible=false;pile.visible=false;
+  lim.armL.rotation.z=lim.armR.rotation.z=lim.legL.rotation.z=lim.legR.rotation.z=0; dog.position.set(0,0,4);dog.rotation.y=0;dhead.rotation.x=0;setEyes(true);mouthBone.visible=false;pile.visible=false;
   drops.forEach(d=>d.m.visible=false); pool.visible=false; boneFly.visible=false; $('blood').style.opacity=0;
   stopFly(); flyLv=0; invT=0; puCool=20; boostK=1; dieY=0; dieV=0; dogY=0; yellT=300; skyT=0; capeG.visible=false; dog.rotation.x=0; player.visible=true;
   cx=0;cy=3.6;cz=6.5;lx=0;ly=1.2;lz=-6;
@@ -571,7 +573,7 @@ function end(type){
   bgm.pause(); alive=false; dying=DY; dieX=player.position.x; dieY=y; dieV=0; y=0; stopFly(); invT=0; boostK=1; dogY=0; capeG.visible=false; dog.rotation.x=0;
   if(type==='pit')sfx.splash(); else sfx.crash();
   if(type==='crow')sfx.caw();
-  sfx.scream(); sfx.growl(); sfx.bark();
+  sfx.yell(1.2); sfx.growl(); sfx.bark();
 }
 function bloodBurst(){
   drops.forEach(d=>{d.m.position.set(player.position.x,player.position.y+.6+Math.random()*.8,.2); d.vx=(Math.random()-.5)*.14; d.vy=.06+Math.random()*.12; d.vz=(Math.random()-.3)*.14; d.m.visible=true;});
@@ -679,14 +681,16 @@ wrap.addEventListener('click',()=>{if(introT>25&&!introLoop)endIntro();});      
 
 /* chết: chó cắn đít, người chơi nằm sấp vùng vẫy la hét (không máu) */
 function thrash(k){
-  const px=dieX;
-  player.rotation.x+=(-1.45-player.rotation.x)*.12; player.rotation.z=Math.sin(k*.9)*.4;
-  player.position.set(px+Math.sin(k*2.3)*.1,.18+Math.abs(Math.sin(k*1.9))*.1,0); player.scale.y=1;
-  lim.armL.rotation.x=-2.6+Math.sin(k*2.1)*.9; lim.armR.rotation.x=-2.6+Math.sin(k*2.1+2)*.9;
-  lim.armL.rotation.z=Math.sin(k*1.3)*.6; lim.armR.rotation.z=Math.sin(k*1.3+1.5)*.6;
-  lim.legL.rotation.x=Math.sin(k*1.7)*.9; lim.legR.rotation.x=-Math.sin(k*1.7)*.9;
-  dog.position.set(px+Math.sin(k*1.4)*.08,.1+Math.abs(Math.sin(k*.9))*.06,.4+Math.sin(k*.9)*.12);
-  dog.rotation.y=Math.sin(k*1.4)*.35; dhead.rotation.x=-.4+Math.sin(k*1.1)*.1; jaw=.04; tail.rotation.z=Math.sin(k*20)*.6;
+  const px=dieX, t0=Math.max(0,k-25), pz=-Math.min(t0,220)*.009+Math.sin(k*.9)*.07;      // bò lết dần về phía trước, bị chó giật ngược
+  player.rotation.x+=(-1.45-player.rotation.x)*.12; player.rotation.z=0; player.rotation.y=Math.sin(k*.8)*.1;
+  player.position.set(px+Math.sin(k*1.1)*.08,.18+Math.abs(Math.sin(k*1.9))*.06,pz); player.scale.y=1;
+  const c=k*1.3;                                                                            // tay cào đất luân phiên, chân đạp loạn
+  lim.armL.rotation.x=-2.6+Math.sin(c)*.55; lim.armR.rotation.x=-2.6-Math.sin(c)*.55;
+  lim.armL.rotation.z=.25+Math.sin(k*1.9)*.35; lim.armR.rotation.z=-.25-Math.sin(k*1.9+1)*.35;
+  lim.legL.rotation.x=Math.sin(k*2.3)*.8; lim.legR.rotation.x=Math.sin(k*2.3+2.2)*.8;
+  lim.legL.rotation.z=Math.sin(k*1.7)*.3; lim.legR.rotation.z=Math.sin(k*1.7+1.5)*.3;
+  dog.position.set(px+Math.sin(k*1.4)*.06,.1+Math.abs(Math.sin(k*.9))*.05,pz+.4+Math.sin(k*.9)*.1);
+  dog.rotation.y=Math.sin(k*1.4)*.3; dhead.rotation.x=-.4+Math.sin(k*1.1)*.1; jaw=.05+(Math.sin(k*1.2)>0?.22:0); tail.rotation.z=Math.sin(k*20)*.6;
 }
 let lastNow=performance.now(); const SCORE_PS=1;      // 1 giây = 1 điểm, đều đặn
 function loop(){
@@ -699,14 +703,15 @@ function loop(){
     if(k<25){dog.position.z+=(.4-dog.position.z)*.2; dog.position.x+=(player.position.x-dog.position.x)*.2; dog.position.y=floorY+dieY+Math.sin(k/25*Math.PI)*.9; jaw=.7; dieV+=.035; dieY=Math.max(0,dieY-dieV); player.position.y=dieY; player.rotation.x+=(-.2-player.rotation.x)*.2;}
     else thrash(k);
     if(k===25){sfx.bite(); sfx.agh(); sfx.growl();}
-    if(k===32)sfx.scream();
+    if(k===38)sfx.cry();
     if(k===55||k===95)sfx.growl();
-    if(k===85||k===108)sfx.yell(1.15);
+    if(k===115)sfx.cry();
     if(dying===0){showoff=true; chewT=0; showOver();}
   } else if(showoff){
     // chó vẫn ngoạm, người chơi vẫn vùng vẫy ở giữa màn hình
     thrash(DY+(++chewT));
-    if(chewT%110===0&&chewT<450)sfx.yell(.9);
+    if(chewT%150===0&&chewT<600)sfx.cry();
+    if(chewT%190===95)sfx.growl();
   } else if(alive){
     speed=Math.min(CH.slow?SPD0:SPDMAX,speed+.00004); score+=dts*SCORE_PS; timer++;
     boostK+=(((flyT>0&&flyType==='jet')?1.45:1)-boostK)*.05;
@@ -789,8 +794,8 @@ function loop(){
   clouds.forEach(c=>{c.position.x+=.03; if(c.position.x>80)c.position.x=-80;});
   // camera: bình thường bám người chơi, khi chết zoom vào con chó
   const zoom=showoff||(dying>0&&dyk>=25), r=(showoff||dying>0)?.05:(introT>0?.08:.35), IN=introT>0&&introT<135;
-  const tcx=IN?3.2:(zoom?dieX*.5:player.position.x*.4), tcy=IN?1.8:(zoom?2.1:3.6+player.position.y*.35), tcz=IN?4.2:(zoom?4.8:6.5),
-        tlx=IN?-.6:(zoom?dieX*.3:player.position.x*.2), tly=IN?1:(zoom?.4:1.2+player.position.y*.3), tlz=IN?0:(zoom?-.3:-6);
+  const tcx=IN?3.2:(zoom?dieX*.5:player.position.x*.4), tcy=IN?1.8:(zoom?2.1:3.6+player.position.y*.35), tcz=IN?4.2:(zoom?4.8+player.position.z*.6:6.5),
+        tlx=IN?-.6:(zoom?dieX*.3:player.position.x*.2), tly=IN?1:(zoom?.4:1.2+player.position.y*.3), tlz=IN?0:(zoom?-.3+player.position.z*.7:-6);
   cx+=(tcx-cx)*r; cy+=(tcy-cy)*r; cz+=(tcz-cz)*r; lx+=(tlx-lx)*r; ly+=(tly-ly)*r; lz+=(tlz-lz)*r;
   const sh=shake>0?(shake--,(Math.random()-.5)*.3):0;
   cam.position.set(cx+sh,cy+sh+(cam.aspect<1?1:0),cz+(cam.aspect<1?2.6:0)); cam.lookAt(lx,ly,lz);
